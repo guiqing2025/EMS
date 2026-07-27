@@ -26,3 +26,4 @@ scripts/.sync_stamps/
 *.dump
 *.sql.gz
 
+backend/data/wang123_token.txt
