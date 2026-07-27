@@ -1,0 +1,47 @@
+[
+  {
+    "method": "POST",
+    "url": "http://k3.szwinline.com:8880/k3cloud/Kingdee.BOS.ServiceFacade.ServicesStub.ClienterService.GetServerCommonConfig.common.kdsvc",
+    "post": "{\"ap0\":\"H4sIAAAAAAAAAzMAACHf2%2FQBAAAA\",\"nonce\":\"\",\"v\":\"1.0\",\"format\":\"1\",\"sign\":\"\",\"timestamp\":\"\\\"2026-07-07T01:56:12.022Z\\\"\",\"compressed\":true,\"compressedapx\":true,\"useragent\":\"KD.HTML5.GZIP\",\"clientinfo\":\"H4sIAAAAAAAAA6WRX2%2BCMBTFPw2vRGGz7BFhDhPdFnHzuZarNCstaS%2F%2B%2B%2FQrwqpxWXxYQsi995z%2Bcm7rkbEXBLyOi0KDMbb2wtj%2BK3XigrZtkLQtZbeOtVZ7A9pZSmXwlVbwF2JqUtjQRuBUblRnQt1AL94LML8fILsT4K0GTZErmR8NQuVszjDugMtjfcWgzCMJK7WyYJIMHyJ%2F4BNCIv9p5A5%2BgjaW6w5ly%2Fns0amJ4CDxQh2Ouvku63oSDPrBqjcEUT%2BJd9RusBYQa6A5P%2F3kOj9aBnxb4g1jxQssrzAk7eY50wDyX4hnifr4TrfwoYVbtUSsz9XEfl%2Bhb057LgWX4DNVWSGK2l2swoRqCluVWAl7NxMuCzj41NQHL5xAi9ZKgBem%2BWLuro41BlUV6%2B3l1Z32Ynjxe7pczGAHfb42%2BzdN7dES4QIAAA%3D%3D\",\"forminfo\":\"H4sIAAAAAAAAA1M1d1I1MipOzi9IBdKqxo5A0snfJTIexDN3AQDNdLs2HwAAAA%3D%3D\"}",
+    "headers": {
+      "referer": "http://k3.szwinline.com:8880/k3cloud/html5/index.aspx?entryrole=SRM",
+      "content-type": "text/json"
+    }
+  },
+  {
+    "method": "POST",
+    "url": "http://k3.szwinline.com:8880/k3cloud/Kingdee.BOS.ServiceFacade.ServicesStub.ClienterService.IsSubscriptionRegControlPolicy.common.kdsvc",
+    "post": "{\"ap0\":\"H4sIAAAAAAAAAzMAACHf2%2FQBAAAA\",\"nonce\":\"\",\"v\":\"1.0\",\"format\":\"1\",\"sign\":\"\",\"timestamp\":\"\\\"2026-07-07T01:56:12.128Z\\\"\",\"compressed\":true,\"compressedapx\":true,\"useragent\":\"KD.HTML5.GZIP\",\"clientinfo\":\"H4sIAAAAAAAAA6WRX2%2BCMBTFPw2vRGGz7BFhDhPdFnHzuZarNCstaS%2F%2B%2B%2FQrwqpxWXxYQsi995z%2Bcm7rkbEXBLyOi0KDMbb2wtj%2BK3XigrZtkLQtZbeOtVZ7A9pZSmXwlVbwF2JqUtjQRuBUblRnQt1AL94LML8fILsT4K0GTZErmR8NQuVszjDugMtjfcWgzCMJK7WyYJIMHyJ%2F4BNCIv9p5A5%2BgjaW6w5ly%2Fns0amJ4CDxQh2Ouvku63oSDPrBqjcEUT%2BJd9RusBYQa6A5P%2F3kOj9aBnxb4g1jxQssrzAk7eY50wDyX4hnifr4TrfwoYVbtUSsz9XEfl%2Bhb057LgWX4DNVWSGK2l2swoRqCluVWAl7NxMuCzj41NQHL5xAi9ZKgBem%2BWLuro41BlUV6%2B3l1Z32Ynjxe7pczGAHfb42%2BzdN7dES4QIAAA%3D%3D\",\"forminfo\":\"H4sIAAAAAAAAA1M1d1I1MipOzi9IBdKqxo5A0snfJTIexDN3AQDNdLs2HwAAAA%3D%3D\"}",
+    "headers": {
+      "referer": "http://k3.szwinline.com:8880/k3cloud/html5/index.aspx?entryrole=SRM",
+      "content-type": "text/json"
+    }
+  },
+  {
+    "method": "POST",
+    "url": "http://k3.szwinline.com:8880/k3cloud/Kingdee.BOS.ServiceFacade.ServicesStub.Account.AccountService.GetVImageInfo4CookieOnly.common.kdsvc",
+    "post": "{\"nonce\":\"\",\"v\":\"1.0\",\"format\":\"1\",\"sign\":\"\",\"timestamp\":\"\\\"2026-07-07T01:56:12.152Z\\\"\",\"compressed\":\"true\",\"compressedapx\":true,\"useragent\":\"KD.HTML5.GZIP\",\"clientinfo\":\"H4sIAAAAAAAAA6WRX2%2BCMBTFPw2vRGGz7BFhDhPdFnHzuZarNCstaS%2F%2B%2B%2FQrwqpxWXxYQsi995z%2Bcm7rkbEXBLyOi0KDMbb2wtj%2BK3XigrZtkLQtZbeOtVZ7A9pZSmXwlVbwF2JqUtjQRuBUblRnQt1AL94LML8fILsT4K0GTZErmR8NQuVszjDugMtjfcWgzCMJK7WyYJIMHyJ%2F4BNCIv9p5A5%2BgjaW6w5ly%2Fns0amJ4CDxQh2Ouvku63oSDPrBqjcEUT%2BJd9RusBYQa6A5P%2F3kOj9aBnxb4g1jxQssrzAk7eY50wDyX4hnifr4TrfwoYVbtUSsz9XEfl%2Bhb057LgWX4DNVWSGK2l2swoRqCluVWAl7NxMuCzj41NQHL5xAi9ZKgBem%2BWLuro41BlUV6%2B3l1Z32Ynjxe7pczGAHfb42%2BzdN7dES4QIAAA%3D%3D\",\"forminfo\":\"H4sIAAAAAAAAA1M1d1I1MipOzi9IBdKqxo5AMjEnB8Q2dwEAWS6NWB0AAAA%3D\"}",
+    "headers": {
+      "referer": "http://k3.szwinline.com:8880/k3cloud/html5/index.aspx?entryrole=SRM",
+      "content-type": "text/json"
+    }
+  },
+  {
+    "method": "POST",
+    "url": "http://k3.szwinline.com:8880/k3cloud/Kingdee.BOS.ServiceFacade.ServicesStub.DynamicForm.SRMActionService.GetSRMDataCenterList.common.kdsvc",
+    "post": "{\"ap0\":\"H4sIAAAAAAAAAwMAAAAAAAAAAAA%3D\",\"ap1\":\"H4sIAAAAAAAAAzMEALfv3IMBAAAA\",\"nonce\":\"\",\"v\":\"1.0\",\"format\":\"1\",\"sign\":\"\",\"timestamp\":\"\\\"2026-07-07T01:56:12.154Z\\\"\",\"compressed\":true,\"compressedapx\":true,\"useragent\":\"KD.HTML5.GZIP\",\"clientinfo\":\"H4sIAAAAAAAAA6WRX2%2BCMBTFPw2vRGGz7BFhDhPdFnHzuZarNCstaS%2F%2B%2B%2FQrwqpxWXxYQsi995z%2Bcm7rkbEXBLyOi0KDMbb2wtj%2BK3XigrZtkLQtZbeOtVZ7A9pZSmXwlVbwF2JqUtjQRuBUblRnQt1AL94LML8fILsT4K0GTZErmR8NQuVszjDugMtjfcWgzCMJK7WyYJIMHyJ%2F4BNCIv9p5A5%2BgjaW6w5ly%2Fns0amJ4CDxQh2Ouvku63oSDPrBqjcEUT%2BJd9RusBYQa6A5P%2F3kOj9aBnxb4g1jxQssrzAk7eY50wDyX4hnifr4TrfwoYVbtUSsz9XEfl%2Bhb057LgWX4DNVWSGK2l2swoRqCluVWAl7NxMuCzj41NQHL5xAi9ZKgBem%2BWLuro41BlUV6%2B3l1Z32Ynjxe7pczGAHfb42%2BzdN7dES4QIAAA%3D%3D\",\"forminfo\":\"H4sIAAAAAAAAA1M1d1I1MipOzi9IBdKqxo5A0sUzLD4lKb8CJGDuAgAtLVt8IgAAAA%3D%3D\"}",
+    "headers": {
+      "referer": "http://k3.szwinline.com:8880/k3cloud/html5/index.aspx?entryrole=SRM",
+      "content-type": "text/json"
+    }
+  },
+  {
+    "method": "POST",
+    "url": "http://k3.szwinline.com:8880/k3cloud/Kingdee.BOS.ServiceFacade.ServicesStub.Account.AccountService.GetDataCenterLoginLanguages.common.kdsvc",
+    "post": "{\"ap0\":\"H4sIAAAAAAAAAzNNMUtJTjVONjc2Sko2AQAA%2Bk43DgAAAA%3D%3D\",\"ap1\":\"H4sIAAAAAAAAAzMGAJuO0m0BAAAA\",\"ap2\":\"H4sIAAAAAAAAA6vK0HX2AwB9dXfxBQAAAA%3D%3D\",\"nonce\":\"\",\"v\":\"1.0\",\"format\":\"1\",\"sign\":\"\",\"timestamp\":\"\\\"2026-07-07T01:56:12.299Z\\\"\",\"compressed\":true,\"compressedapx\":true,\"useragent\":\"KD.HTML5.GZIP\",\"clientinfo\":\"H4sIAAAAAAAAA6VSXW%2BDIBT9NT5qKraij9aus0m7LbVbn6leKxmCAfr564eto8v2NhNycznn3sM9gIOnDkK0TcpSglImd4LExCKu%2FDGC0g1Dv3THURy4EcS%2BSzBCuzAI0CQgXTFKTWxIMai%2FFkq%2FkAb%2B171QM6jIgekFr8RdoiJMQc8Os7YaaC0bZO21BUk0FTy%2FKA2NFbEFUylOCuTm0j5OMK%2Fh4LSopTDH4tQfR97IwxhHXhzaxg%2BQyujapmyzWk4smzIKXD9U%2FfCOH7P7HqNRD2z7AhT1SHIklJEdg0QCyen1e67bP8uA7mv9S2NLS13%2FkMGzO54XEoAPknjiWl7eyB7eJbNWa63bWzY36zPw1PVEOaMcvEI0hoiizothCiYOpclq3TBzN3PKSzh7RLVnJ5hDJy0FAyeY5euVvbrioLRoErl%2FfBjLPSta%2FkU36yUcoZ%2Bvm%2F0LSkjqN5QDAAA%3D\",\"forminfo\":\"H4sIAAAAAAAAA1M1d1I1MipOzi9IBdKqxo5A0sUzLD4lKb8CJGDuAgAtLVt8IgAAAA%3D%3D\"}",
+    "headers": {
+      "referer": "http://k3.szwinline.com:8880/k3cloud/html5/index.aspx?entryrole=SRM",
+      "content-type": "text/json"
+    }
+  }
+]

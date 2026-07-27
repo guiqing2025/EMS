@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>出货单</title>
+  <style>
+    body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; margin: 24px; color: #111; }
+    h1 { text-align: center; margin-bottom: 6px; }
+    .sub { text-align: center; color: #666; margin-bottom: 24px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #333; padding: 8px 10px; font-size: 14px; }
+    th { background: #f3f4f6; width: 120px; text-align: left; }
+    .sign { margin-top: 36px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+    .sign div { border-top: 1px solid #333; padding-top: 8px; }
+    @media print {
+      .no-print { display: none; }
+      body { margin: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print" style="margin-bottom:16px">
+    <button onclick="window.print()">打印</button>
+    <button onclick="window.close()">关闭</button>
+  </div>
+  <h1>深圳鼎雄电子科技有限公司</h1>
+  <div class="sub">出货单</div>
+  <table>
+    <tr><th>出货单号</th><td id="f-shipment-no">-</td><th>发货日期</th><td id="f-ship-date">-</td></tr>
+    <tr><th>客户</th><td id="f-customer">-</td><th>订单号</th><td id="f-purchase-no">-</td></tr>
+    <tr><th>PCBA料号</th><td id="f-goods-no">-</td><th>发货数量</th><td id="f-qty">-</td></tr>
+    <tr><th>品名</th><td colspan="3" id="f-goods-name">-</td></tr>
+    <tr><th>箱数</th><td id="f-box-count">-</td><th>物流/送货方式</th><td id="f-logistics">-</td></tr>
+    <tr><th>备注</th><td colspan="3" id="f-remark">-</td></tr>
+    <tr><th>操作员</th><td id="f-operator">-</td><th>打印时间</th><td id="f-print-time">-</td></tr>
+  </table>
+  <div class="sign">
+    <div>制单：</div>
+    <div>检验：</div>
+    <div>收货：</div>
+  </div>
+  <script>
+    const API = '/api';
+    const token = localStorage.getItem('ems_auth_token') || '';
+    const params = new URLSearchParams(location.search);
+    const id = params.get('id');
+    function set(id, val) { document.getElementById(id).textContent = val || '-'; }
+    fetch(`${API}/packing/shipment/${id}`, { headers: { 'X-Auth-Token': token } })
+      .then(r => r.json())
+      .then(d => {
+        set('f-shipment-no', d.shipment_no);
+        set('f-ship-date', d.ship_date);
+        set('f-customer', d.customer_name);
+        set('f-purchase-no', d.purchase_no);
+        set('f-goods-no', d.product_goods_no);
+        set('f-goods-name', d.product_goods_name);
+        set('f-qty', d.qty);
+        set('f-box-count', d.box_count);
+        set('f-logistics', d.logistics);
+        set('f-remark', d.remark);
+        set('f-operator', d.operator);
+        set('f-print-time', new Date().toLocaleString());
+      })
+      .catch(() => alert('加载出货单失败'));
+  </script>
+</body>
+</html>

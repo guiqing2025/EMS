@@ -1,0 +1,8 @@
+{
+  "ems_base_url": "http://192.168.2.168:8000",
+  "api_key": "ems-ict-gate-2026-dx",
+  "machine_id": "ict-pilot",
+  "append_enter": true,
+  "focus_delay_ms": 80,
+  "play_sound": true
+}

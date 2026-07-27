@@ -1,0 +1,28 @@
+# EMS — 勿提交密钥与本地库
+.env
+.env.*
+!.env.example
+backend/.env.postgres
+# 本机路径覆盖（由 sync 从 env/*.example 生成）
+env/local.env
+env/local.*.env
+backend/ems.db
+backend/ems.db-*
+backend/ems.dev.db
+backend/ems.dev.db-*
+backend/ems.dev.db.bak*
+backend/*.db.bak*
+backend/backups/
+*.pyc
+__pycache__/
+.DS_Store
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+*.log
+/tmp/
+scripts/_db_exports/
+scripts/.sync_stamps/
+*.dump
+*.sql.gz
+

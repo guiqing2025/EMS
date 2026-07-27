@@ -1,0 +1,5 @@
+{"event": "scan", "line_key": "feilisi|5105-20240522002|0001|1", "purchase_no": "5105-20240522002", "barcode": "TEST-SN-MVP-001", "code_type": "qr", "operator": "tester", "pending_qty": 2, "at": "2026-07-07T06:08:43.744274"}
+{"event": "scan", "line_key": "feilisi|5105-20260120115|0001|1", "purchase_no": "5105-20260120115", "barcode": "D0400030032605980571", "code_type": "qr", "operator": "魏贵清", "pending_qty": 2, "at": "2026-07-07T07:01:24.822835"}
+{"event": "scan", "line_key": "feilisi|5105-20260120115|0001|1", "purchase_no": "5105-20260120115", "barcode": "D04000300326051980571", "code_type": "qr", "operator": "魏贵清", "pending_qty": 3, "at": "2026-07-07T07:26:44.705503"}
+{"event": "scan", "line_key": "feilisi|5105-20260120115|0001|1", "purchase_no": "5105-20260120115", "barcode": "D04000300326051981925", "code_type": "qr", "operator": "魏贵清", "pending_qty": 4, "at": "2026-07-07T07:31:08.464384"}
+{"event": "scan", "line_key": "feilisi|5105-20260120115|0001|1", "purchase_no": "5105-20260120115", "barcode": "D0400030032605980107", "code_type": "qr", "operator": "魏贵清", "pending_qty": 5, "at": "2026-07-07T08:04:36.229721"}

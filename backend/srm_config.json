@@ -1,0 +1,317 @@
+{
+  "public_base_url": "http://192.168.2.168:8000",
+  "sync_interval_minutes": 10,
+  "sync_daily_hour": 9,
+  "sync_daily_minute": 0,
+  "auto_sync_enabled": true,
+  "login_username": "sysadmin",
+  "login_password": "jb140313!",
+  "dashboard_password": "jb140313!",
+  "warehouse_share_path": "/Users/dx/Desktop/共享-测试软件资料/D-仓库表格/客户进销表",
+  "warehouse_auto_sync_enabled": false,
+  "warehouse_sync_interval_minutes": 120,
+  "substitution_file_path": "/Users/dx/Desktop/EMS/替代料06-03.xls",
+  "process_detail_file_path": "/Users/dx/Desktop/EMS/工艺明细.xlsx",
+  "engineering_share_base": "/Users/dx/Desktop/共享-测试软件资料/A-生产 工程 品质共用文件夹",
+  "hr_roster_path": "/Users/dx/Desktop/共享-测试软件资料/B-行政 人事资料/鼎雄员工花名册.xlsx",
+  "aoi": {
+    "share": "mes_txt",
+    "username": "A",
+    "password": "000000",
+    "auto_sync_enabled": true,
+    "sync_interval_minutes": 5,
+    "max_files_per_sync": 0,
+    "lookback_days": 14,
+    "machines": [
+      {
+        "id": "aoi-115",
+        "host": "192.168.2.115"
+      },
+      {
+        "id": "aoi-116",
+        "host": "192.168.2.116"
+      }
+    ]
+  },
+  "ict": {
+    "auto_sync_enabled": true,
+    "sync_interval_minutes": 5,
+    "max_files_per_sync": 800,
+    "lookback_days": 7,
+    "share": "ICT测试记录",
+    "subpath": "test1",
+    "timezone": "Asia/Shanghai",
+    "gate_api_key": "ems-ict-gate-2026-dx",
+    "sync_windows": [
+      {
+        "start": "08:00",
+        "end": "12:00"
+      },
+      {
+        "start": "12:00",
+        "end": "13:30",
+        "interval_minutes": 30
+      },
+      {
+        "start": "13:30",
+        "end": "17:30"
+      },
+      {
+        "start": "18:00",
+        "end": "23:00"
+      }
+    ],
+    "machines": [
+      {
+        "id": "ict-108",
+        "host": "192.168.2.123",
+        "username": "Administrator",
+        "password": "000000"
+      },
+      {
+        "id": "ict-129",
+        "host": "192.168.2.131",
+        "username": "Administrator",
+        "password": "000000"
+      },
+      {
+        "id": "ict-136",
+        "host": "192.168.2.126",
+        "username": "Administrator",
+        "password": "000000"
+      }
+    ]
+  },
+  "enjiu_ats": {
+    "auto_sync_enabled": true,
+    "open_orders_only": true,
+    "lookback_days": 120,
+    "max_files_per_sync": 2000,
+    "share": "ENJOY",
+    "machines": [
+      {
+        "id": "enjiu-ats-156",
+        "host": "192.168.2.156",
+        "username": "Administrator",
+        "password": "000000"
+      }
+    ],
+    "sources": [
+      {
+        "id": "enjiu-ats-156",
+        "host": "192.168.2.156",
+        "username": "Administrator",
+        "password": "000000",
+        "share": "ENJOY",
+        "subpath": "ATS/log/Var_Type",
+        "kind": "var_type_json"
+      },
+      {
+        "id": "enjiu-digitest-156",
+        "host": "192.168.2.156",
+        "username": "Administrator",
+        "password": "000000",
+        "share": "ENJOY",
+        "subpath": "DigiTest/log",
+        "kind": "digitest_log"
+      }
+    ]
+  },
+  "wang123_legacy": {
+    "api_base": "https://zym.wang123.online",
+    "web_base": "https://www.wang123.online",
+    "username": "blue",
+    "password": "blue1",
+    "auto_sync_enabled": true,
+    "sync_interval_minutes": 30,
+    "default_scan_status": "shipped"
+  },
+  "tts": {
+    "api_base": "http://tts.felicitysolar.com:8890",
+    "username": "dx0101",
+    "password": "123456",
+    "customer_id": "feilisi",
+    "customer_name": "菲利斯",
+    "auto_sync_enabled": true,
+    "sync_interval_minutes": 60,
+    "max_workers": 8
+  },
+  "engineering_customers": [
+    {
+      "internal_code": "A123",
+      "customer_id": "feilisi",
+      "name": "菲利斯",
+      "bom_folder": "A123客户最新资料",
+      "asset_folders": [
+        "A123"
+      ],
+      "rules": {
+        "model_key_regex": "1\\d{2}-\\d{6}-\\d{2}",
+        "bom_parse_profile": "feilisi",
+        "assets_scope": "order",
+        "checklist": {
+          "bom": true,
+          "placement": true,
+          "gerber": false,
+          "refmap": false,
+          "mount_resolved": true
+        },
+        "mount": {
+          "extra_smt_name_patterns": [],
+          "extra_dip_name_patterns": [],
+          "extra_assy_name_patterns": []
+        },
+        "workflow": {
+          "require_placement": true,
+          "allow_approve_without_mount": false
+        }
+      }
+    },
+    {
+      "internal_code": "A116",
+      "customer_id": "enjiu",
+      "name": "恩玖·鼎雄",
+      "bom_folder": "A116-NJ",
+      "rules": {
+        "model_key_regex": "^(0\\d{7,8}|99\\d{6,8})",
+        "bom_parse_profile": "enjiu",
+        "assets_scope": "order",
+        "model_code_variants": [
+          {
+            "from_prefix": "03019",
+            "to_prefix": "03029"
+          },
+          {
+            "from_prefix": "03029",
+            "to_prefix": "03019"
+          }
+        ],
+        "checklist": {
+          "bom": true,
+          "placement": true,
+          "gerber": false,
+          "refmap": false,
+          "mount_resolved": true
+        },
+        "mount": {
+          "extra_smt_name_patterns": [],
+          "extra_dip_name_patterns": [],
+          "extra_assy_name_patterns": []
+        },
+        "workflow": {
+          "require_placement": true,
+          "allow_approve_without_mount": false
+        }
+      }
+    },
+    {
+      "internal_code": "A067",
+      "customer_id": "yonglian",
+      "name": "永联",
+      "bom_folder": "A067-YL",
+      "asset_folders": [
+        "A067-YL"
+      ],
+      "rules": {
+        "model_key_regex": "^(91\\.\\d{4}\\.\\d+|03\\.\\d{2}\\.\\d+|69\\.\\d{2}\\.\\d+)",
+        "bom_parse_profile": "yonglian",
+        "checklist": {
+          "bom": true,
+          "placement": true,
+          "gerber": false,
+          "refmap": false,
+          "mount_resolved": true
+        },
+        "mount": {
+          "extra_smt_name_patterns": [],
+          "extra_dip_name_patterns": [],
+          "extra_assy_name_patterns": []
+        },
+        "workflow": {
+          "require_placement": true,
+          "allow_approve_without_mount": false
+        }
+      }
+    },
+    {
+      "internal_code": "A120",
+      "customer_id": "yilanke",
+      "customer_id_aliases": [
+        "manual_daeae675",
+        "wh_yilanke"
+      ],
+      "name": "亿兰科",
+      "bom_folder": "A120客户最新资料",
+      "asset_folders": [
+        "A120"
+      ],
+      "rules": {
+        "model_key_regex": "^(3001-\\d+[A-Za-z]?)",
+        "bom_parse_profile": "auto",
+        "checklist": {
+          "bom": true,
+          "placement": true,
+          "gerber": false,
+          "refmap": false,
+          "mount_resolved": true
+        },
+        "mount": {
+          "extra_smt_name_patterns": [],
+          "extra_dip_name_patterns": [],
+          "extra_assy_name_patterns": []
+        },
+        "workflow": {
+          "require_placement": true,
+          "allow_approve_without_mount": false
+        }
+      }
+    }
+  ],
+  "customers": [
+    {
+      "id": "feilisi",
+      "name": "菲利斯",
+      "api_type": "v1",
+      "srm_base_url": "http://139.159.240.251:19190",
+      "api_path": "",
+      "login_name": "FL00676",
+      "password": "DX123456",
+      "enabled": true
+    },
+    {
+      "id": "enjiu",
+      "name": "恩玖·鼎雄",
+      "api_type": "v2",
+      "srm_base_url": "http://218.17.126.115:60801",
+      "api_path": "/adpweb",
+      "login_name": "100246",
+      "password": "123456789",
+      "enabled": true
+    },
+    {
+      "id": "yonglian",
+      "name": "永联",
+      "api_type": "kingdee",
+      "srm_base_url": "http://k3.szwinline.com:8880",
+      "api_path": "/k3cloud",
+      "acct_id": "5d6dce3c732bc4",
+      "entry_role": "SRM",
+      "login_name": "07.01.0089",
+      "password": "dx123456**",
+      "enabled": true
+    },
+    {
+      "id": "yilanke",
+      "name": "亿兰科",
+      "api_type": "manual",
+      "srm_base_url": "",
+      "api_path": "",
+      "login_name": "",
+      "password": "",
+      "enabled": true
+    }
+  ],
+  "receive_board": {
+    "history_start": "2026-01-01"
+  }
+}
