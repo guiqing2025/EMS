@@ -249,8 +249,170 @@ def submit_bom_for_review(
     )
     db.add(inbox)
     db.flush()
+    # 齐套达标则自动通过，减少人工待办
+    try_auto_approve_bom_review(db, bom.id, trigger="submit")
+    db.refresh(bom)
     return bom
 
+
+def evaluate_auto_review(db: Session, bom_model_id: int) -> dict:
+    """评估是否可自动审核通过（不写库）。"""
+    dossier = build_review_dossier(db, bom_model_id)
+    missing = [
+        c["label"]
+        for c in (dossier.get("checklist") or [])
+        if not c.get("optional") and not c.get("ready")
+    ]
+    blockers: list[str] = []
+    bom = db.query(BomModel).filter(BomModel.id == bom_model_id).first()
+    if not bom:
+        return {"ok": False, "missing": ["机型不存在"], "blockers": [], "dossier": dossier}
+
+    place, gerber, refmap = _find_assets(db, bom)
+    req = (dossier.get("checklist_policy") or {})
+    # 已导入且审核失败的资料：阻断自动通过（警告可过）
+    if place and (place.line_count or 0) > 0 and (place.audit_status or "").lower() == "failed":
+        blockers.append(f"贴片坐标审核未通过：{(place.audit_message or place.audit_status or 'failed')[:80]}")
+    if gerber and (gerber.file_count or 0) > 0 and (gerber.audit_status or "").lower() == "failed":
+        blockers.append(f"Gerber 审核未通过：{(getattr(gerber, 'audit_message', None) or gerber.audit_status or 'failed')[:80]}")
+    if refmap and (refmap.audit_status or "").lower() == "failed":
+        blockers.append(f"位号图审核未通过：{(getattr(refmap, 'audit_message', None) or refmap.audit_status or 'failed')[:80]}")
+
+    # 必交坐标但未导入且未豁免
+    if req.get("placement") and not (dossier.get("checklist_policy") or {}).get("placement_waived"):
+        place_item = next((c for c in dossier.get("checklist") or [] if c.get("label") == "贴片坐标"), None)
+        if place_item and not place_item.get("ready") and not place_item.get("optional"):
+            if "贴片坐标" not in missing:
+                missing.append("贴片坐标")
+
+    ok = not missing and not blockers
+    return {
+        "ok": ok,
+        "missing": missing,
+        "blockers": blockers,
+        "dossier": dossier,
+        "internal_code": bom.internal_code or "",
+        "model_code": bom.model_code or "",
+        "purchase_no": bom.purchase_no or "",
+    }
+
+
+def try_auto_approve_bom_review(
+    db: Session,
+    bom_model_id: int,
+    *,
+    trigger: str = "submit",
+    force: bool = False,
+) -> dict:
+    """规则通过则自动审核通过；否则更新待审说明，留给人工。
+
+    返回 {auto_approved, reason, missing, blockers}
+    """
+    from config import load_config
+    from eng_customer_rules import workflow_for
+
+    bom = db.query(BomModel).filter(BomModel.id == bom_model_id).first()
+    if not bom or not bom.is_active:
+        return {"auto_approved": False, "reason": "机型不存在", "missing": [], "blockers": []}
+
+    status = (bom.eng_review_status or "").strip()
+    if status == REVIEW_APPROVED and not force:
+        return {"auto_approved": False, "reason": "已通过", "missing": [], "blockers": []}
+    if status not in (REVIEW_PENDING, REVIEW_APPROVED) and not force:
+        return {"auto_approved": False, "reason": f"状态={status or '空'}，跳过", "missing": [], "blockers": []}
+
+    cfg = load_config()
+    if not cfg.get("eng_auto_review_enabled", True) and not force:
+        return {"auto_approved": False, "reason": "全局自动审核已关闭", "missing": [], "blockers": []}
+
+    wf = workflow_for(bom.internal_code or "")
+    if not wf.get("auto_approve", True) and not force:
+        return {
+            "auto_approved": False,
+            "reason": f"客户 {bom.internal_code} 未开启 auto_approve",
+            "missing": [],
+            "blockers": [],
+        }
+
+    ev = evaluate_auto_review(db, bom_model_id)
+    if not ev["ok"]:
+        parts = []
+        if ev["missing"]:
+            parts.append("缺：" + "、".join(ev["missing"]))
+        if ev["blockers"]:
+            parts.append("阻：" + "；".join(ev["blockers"]))
+        hint = "待人工审核（自动审核未过）"
+        if parts:
+            hint = f"{hint} · {' · '.join(parts)}"
+        # 保留原送审说明前缀
+        prev_msg = (bom.eng_review_message or "").strip()
+        if "待人工审核" not in prev_msg:
+            bom.eng_review_message = f"{hint}；{prev_msg}".strip("；")[:512]
+        else:
+            bom.eng_review_message = hint[:512]
+        bom.updated_at = datetime.utcnow()
+        db.flush()
+        return {
+            "auto_approved": False,
+            "reason": hint,
+            "missing": ev["missing"],
+            "blockers": ev["blockers"],
+        }
+
+    msg = f"系统自动审核通过（{trigger}）· {_asset_summary(db, bom)}"
+    approve_bom_review(db, bom_model_id, reviewer="系统自动审核", message=msg)
+    return {
+        "auto_approved": True,
+        "reason": msg,
+        "missing": [],
+        "blockers": [],
+    }
+
+
+def auto_review_pending_batch(
+    db: Session, *, limit: int = 200, after_id: int = 0, force: bool = False
+) -> dict:
+    """扫描当前待审 BOM，尝试自动通过（用于积压消化）。
+
+    after_id：按 id 游标分页，便于前端分批刷新进度条（跳过已扫过的待审项）。
+    """
+    pending_q = db.query(BomModel).filter(
+        BomModel.is_active.is_(True), BomModel.eng_review_status == REVIEW_PENDING
+    )
+    total_pending = pending_q.count()
+    q = pending_q
+    if after_id and int(after_id) > 0:
+        q = q.filter(BomModel.id > int(after_id))
+    rows = q.order_by(BomModel.id.asc()).limit(limit).all()
+    approved = 0
+    skipped = 0
+    details: list[dict] = []
+    for bom in rows:
+        result = try_auto_approve_bom_review(db, bom.id, trigger="batch", force=force)
+        if result.get("auto_approved"):
+            approved += 1
+        else:
+            skipped += 1
+        details.append(
+            {
+                "bom_model_id": bom.id,
+                "internal_code": bom.internal_code,
+                "model_code": bom.model_code,
+                "purchase_no": bom.purchase_no,
+                **result,
+            }
+        )
+    next_after_id = rows[-1].id if rows else int(after_id or 0)
+    return {
+        "scanned": len(rows),
+        "approved": approved,
+        "skipped": skipped,
+        "items": details[:50],
+        "total_pending": total_pending,
+        "after_id": int(after_id or 0),
+        "next_after_id": next_after_id,
+        "done": len(rows) < limit,
+    }
 
 def submit_by_model_code(
     db: Session,
@@ -292,6 +454,8 @@ def reopen_bom_review_after_edit(
         bom.eng_review_message = (note or "贴装信息已修改，请审核通过")[:512]
         bom.updated_at = datetime.utcnow()
         db.flush()
+        try_auto_approve_bom_review(db, bom_model_id, trigger="mount_edit")
+        db.refresh(bom)
         return bom
     if prev in (REVIEW_APPROVED, REVIEW_REJECTED, REVIEW_IMPORT, ""):
         return submit_bom_for_review(

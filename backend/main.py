@@ -87,10 +87,11 @@ app = FastAPI(
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=500)
-_cors = security_cfg()["cors_origins"]
+_sec = security_cfg()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors,
+    allow_origins=_sec["cors_origins"],
+    allow_origin_regex=_sec.get("cors_origin_regex"),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Auth-Token", "X-Api-Key", "Accept"],

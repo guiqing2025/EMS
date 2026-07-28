@@ -1,6 +1,6 @@
 #!/bin/zsh
 # =============================================================================
-# EMS【生产】完全启动 — 端口 8000 + 内网 http://192.168.2.168:8000
+# EMS【生产】完全启动 — 端口 8000（访问地址见 EMS_PUBLIC_URL 或自动探测本机局域网 IP）
 # 默认连 Postgres（backend/.env.postgres）；回滚 SQLite：EMS_USE_SQLITE=1
 # 开发请用：../start_dev_env.sh 或 ./start_ems_dev.sh（8001 + ems.dev.db）
 # =============================================================================
@@ -13,7 +13,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 LOG=/tmp/ems-uvicorn.log
-PUBLIC_URL="${EMS_PUBLIC_URL:-http://192.168.2.168:8000}"
 LOCAL_URL="http://127.0.0.1:8000"
 FORCE=0
 SMOKE_ONLY=0
@@ -27,6 +26,32 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+ems_guess_public_url() {
+  local port="${1:-8000}"
+  if [[ -n "${EMS_PUBLIC_URL:-}" ]]; then
+    echo "${EMS_PUBLIC_URL}"
+    return
+  fi
+  local ip="" cand=""
+  for iface in en0 en1 en2 en3 en4 en5 en6 en7 en8 en9 bridge0; do
+    cand="$(ipconfig getifaddr "${iface}" 2>/dev/null || true)"
+    [[ -z "${cand}" ]] && continue
+    # 跳过链路本地 / 回环
+    [[ "${cand}" == 169.254.* || "${cand}" == 127.* ]] && continue
+    ip="${cand}"
+    break
+  done
+  if [[ -z "${ip}" ]] && command -v ip >/dev/null 2>&1; then
+    ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
+    [[ "${ip}" == 169.254.* || "${ip}" == 127.* ]] && ip=""
+  fi
+  if [[ -n "${ip}" ]]; then
+    echo "http://${ip}:${port}"
+  else
+    echo "http://127.0.0.1:${port}"
+  fi
+}
 
 # 加载本机路径覆盖（安全解析，避免路径空格被 source 拆坏）
 LOCAL_ENV="${ROOT}/../env/local.env"
@@ -49,8 +74,9 @@ if [[ -f "${LOCAL_ENV}" ]]; then
     export "${key}=${val}"
   done < "${LOCAL_ENV}"
   echo "已加载本机路径: env/local.env"
-  PUBLIC_URL="${EMS_PUBLIC_URL:-$PUBLIC_URL}"
 fi
+
+PUBLIC_URL="$(ems_guess_public_url 8000)"
 
 # 防止从开发 shell 继承 EMS_USE_SQLITE / EMS_DB / EMS_DEV_MODE 误连开发库
 # 回滚 SQLite 必须在本脚本参数里显式带：EMS_USE_SQLITE=1 ./start_ems.sh --force

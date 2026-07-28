@@ -297,6 +297,8 @@
   }
 
   async function engApi(path, opts = {}) {
+    // 兼容误写 /api/xxx（API 前缀已是 /api，否则会变成 /api/api/... → 405）
+    if (path.startsWith('/api/')) path = path.slice(4);
     const res = await fetch(API + path, {
       ...opts,
       headers: { ...window.EMS.authHeaders(), 'Content-Type': 'application/json', ...(opts.headers || {}) },
@@ -391,11 +393,11 @@
     const hint = document.getElementById('eng-review-hint');
     if (hint) {
       if (isEngAuditOnly()) {
-        hint.textContent = '审核员（黄星/王总）：点「待审核资料」打开推送 →「去处理」核对贴装 →「审核通过」或「退回」。审完可继续下一条。';
+        hint.textContent = '审核员（黄星/王总）：齐套达标会自动通过；未过的点「待审核资料」→「去处理」。可用「消化积压」批量自动审核。';
       } else if (isEngImportOnly()) {
-        hint.textContent = '资料员邱梦林：导入 BOM / 坐标 / Gerber 后自动送审；被退回后按醒目原因修正再重新导入。';
+        hint.textContent = '资料员邱梦林：导入 BOM / 坐标 / Gerber 后自动送审；齐套达标将自动通过，否则仍待人工审核。';
       } else {
-        hint.textContent = '先点「BOM 资料审核」核对贴装，再点「审核通过」。资料员导入后会自动进入待审。';
+        hint.textContent = '导入后自动送审；齐套且文件审核无失败时系统自动通过，否则人工「审核通过/退回」。';
       }
     }
   }
@@ -3603,6 +3605,66 @@
     document.getElementById('btn-eng-todo-refresh')?.addEventListener('click', () => loadReviewInbox({ silent: true }));
     document.getElementById('btn-eng-review-inbox-close')?.addEventListener('click', () => {
       document.getElementById('eng-review-inbox-modal')?.classList.add('hidden');
+    });
+    document.getElementById('btn-eng-review-auto-run')?.addEventListener('click', async () => {
+      if (!canEngAudit()) {
+        window.EMS.showToast('无审核权限', 'error');
+        return;
+      }
+      const btn = document.getElementById('btn-eng-review-auto-run');
+      const modal = document.getElementById('eng-auto-review-progress-modal');
+      const bar = document.getElementById('eng-auto-review-progress-bar');
+      const textEl = document.getElementById('eng-auto-review-progress-text');
+      const statsEl = document.getElementById('eng-auto-review-progress-stats');
+      const setProgress = (pct, text, stats) => {
+        if (bar) bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+        if (textEl && text) textEl.textContent = text;
+        if (statsEl && stats != null) statsEl.textContent = stats;
+      };
+      const CHUNK = 8;
+      let afterId = 0;
+      let total = 0;
+      let processed = 0;
+      let approved = 0;
+      let skipped = 0;
+      if (btn) btn.disabled = true;
+      modal?.classList.remove('hidden');
+      setProgress(2, '正在启动自动审核…', '');
+      try {
+        while (true) {
+          const data = await engApi(
+            `/review-auto-run?limit=${CHUNK}&after_id=${afterId}`,
+            { method: 'POST', body: '{}' },
+          );
+          if (!total) total = Number(data.total_pending || 0) || Number(data.scanned || 0);
+          processed += Number(data.scanned || 0);
+          approved += Number(data.approved || 0);
+          skipped += Number(data.skipped || 0);
+          afterId = Number(data.next_after_id || afterId);
+          const pct = total > 0 ? Math.min(99, Math.round((processed / total) * 100)) : 50;
+          setProgress(
+            pct,
+            data.done && processed >= total ? '正在汇总结果…' : `正在审核 ${processed}/${total || '…'}…`,
+            `已通过 ${approved} · 仍待审 ${skipped}`,
+          );
+          if (data.done || !data.scanned) break;
+        }
+        setProgress(100, '自动审核完成', `扫描 ${processed} · 通过 ${approved} · 仍待审 ${skipped}`);
+        await new Promise((r) => setTimeout(r, 350));
+        window.EMS.showToast(
+          `自动审核完成：扫描 ${processed}，通过 ${approved}，仍待审 ${skipped}`,
+          'success',
+        );
+        await loadReviewInbox({ silent: true });
+        renderReviewTodoList('eng-review-inbox-table');
+        if (typeof loadModels === 'function') loadModels();
+      } catch (e) {
+        window.EMS.showToast(e.message || '自动审核失败', 'error');
+      } finally {
+        modal?.classList.add('hidden');
+        if (bar) bar.style.width = '0%';
+        if (btn) btn.disabled = false;
+      }
     });
     document.getElementById('btn-eng-kitting')?.addEventListener('click', showKitting);
     document.getElementById('btn-eng-print-issue')?.addEventListener('click', printIssueSlip);

@@ -29,7 +29,7 @@ except ImportError:
 
 CONFIG_NAME = "ict_gate_config.json"
 DEFAULT_CONFIG = {
-    "ems_base_url": "http://192.168.2.168:8000",
+    "ems_base_url": "http://127.0.0.1:8000",
     "api_key": "ems-ict-gate-2026-dx",
     "machine_id": "ict-pilot",
     "append_enter": True,

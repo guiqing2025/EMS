@@ -17,6 +17,7 @@ import type {
   WarehouseMaterialDetail,
   WarehouseModelMaterials,
   WarehouseMovement,
+  WarehouseOpenOrder,
 } from '@/types/warehouse'
 
 const BASE = '/warehouse'
@@ -70,15 +71,21 @@ export async function fetchMaterials(customerId = '', keyword = '') {
   return apiFetch<WarehouseMaterial[]>(`${BASE}/materials${q ? `?${q}` : ''}`)
 }
 
+export async function fetchOpenOrders(customerId: string) {
+  const qs = new URLSearchParams()
+  qs.set('customer_id', customerId)
+  return apiFetch<WarehouseOpenOrder[]>(`${BASE}/open-orders?${qs}`)
+}
+
 export async function fetchMaterialsByModel(opts: {
-  modelCode: string
+  modelCode?: string
   orderQty?: number
   customerId?: string
   bomModelId?: number | null
   purchaseNo?: string
 }) {
   const qs = new URLSearchParams()
-  qs.set('model_code', opts.modelCode)
+  if (opts.modelCode) qs.set('model_code', opts.modelCode)
   if (opts.orderQty != null) qs.set('order_qty', String(opts.orderQty))
   if (opts.customerId) qs.set('customer_id', opts.customerId)
   if (opts.bomModelId) qs.set('bom_model_id', String(opts.bomModelId))

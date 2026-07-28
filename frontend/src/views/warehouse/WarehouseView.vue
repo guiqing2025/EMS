@@ -5,7 +5,7 @@
         <div>
           <h2 style="margin: 0; font-size: 18px">仓库管理 · 物料明细</h2>
           <p class="wh-path-info">
-            默认不展示物料明细；输入机型号 / 料号 / 品名查询后再显示匹配结果
+            选择客户可查看在制订单齐料；也可输入机型号 / 料号 / 品名查询物料明细
           </p>
           <p class="wh-path-info">{{ shareInfo }}</p>
         </div>
@@ -40,13 +40,14 @@
           </el-form-item>
           <el-form-item>
             <el-button type="primary" @click="onSearch">查询</el-button>
-            <el-button v-if="listRevealed" @click="clearList">清除查询</el-button>
+            <el-button v-if="viewMode === 'model' && customerId" @click="backToOpenOrders">返回在制订单</el-button>
+            <el-button v-if="listRevealed" @click="clearList">清除</el-button>
           </el-form-item>
         </el-form>
 
         <el-empty
           v-if="!listRevealed"
-          description="请输入机型号、料号或品名后点「查询」，再显示物料明细"
+          description="请先选择客户查看在制订单齐料，或输入机型号/料号后点「查询」"
           :image-size="72"
           style="padding: 48px 0"
         />
@@ -93,7 +94,10 @@
         </div>
 
         <p class="wh-hint">
-          <template v-if="viewMode === 'model'">
+          <template v-if="viewMode === 'orders'">
+            下表为该客户在制订单；点击一行可展开 BOM 用料与当前库存齐料明细。
+          </template>
+          <template v-else-if="viewMode === 'model'">
             下表为该订单已确认 BOM 的用料及当前库存；点击有库存账的行可查看单物料明细。
           </template>
           <template v-else>
@@ -101,9 +105,57 @@
           </template>
         </p>
 
+        <!-- 客户在制订单列表 -->
+        <el-table
+          v-if="viewMode === 'orders'"
+          v-loading="loading"
+          :data="openOrders"
+          stripe
+          border
+          size="small"
+          class="wh-table-click wh-materials-table"
+          max-height="calc(100vh - 300px)"
+          @row-click="onOpenOrderClick"
+        >
+          <el-table-column prop="purchase_no" label="订单号" width="150" show-overflow-tooltip />
+          <el-table-column prop="model_code" label="机型" width="140" show-overflow-tooltip />
+          <el-table-column prop="model_name" label="品名" min-width="140" show-overflow-tooltip />
+          <el-table-column label="订单数量" width="88" align="right">
+            <template #default="{ row }">{{ fmtWhQty(row.order_qty) }}</template>
+          </el-table-column>
+          <el-table-column label="BOM" width="110" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.bom_status === 'imported'" size="small" type="success" effect="plain">
+                已确认 {{ row.line_count }} 项
+              </el-tag>
+              <el-tag v-else size="small" type="info" effect="plain">待导入</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="齐料状态" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="statusTagType(row.material_status)" effect="plain">
+                {{ row.material_status_label || statusLabel(row.material_status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="客户齐套" width="100" align="center">
+            <template #default="{ row }">
+              <span v-if="row.customer_kit_status === 'na'" class="cell-muted">—</span>
+              <el-tag v-else size="small" :type="kitTagType(row.customer_kit_status)" effect="plain">
+                {{ row.customer_kit_status_label }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="88" align="center" fixed="right">
+            <template #default>
+              <el-button link type="primary" size="small">查看 BOM</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
         <!-- 机型 BOM 物料表 -->
         <el-table
-          v-if="viewMode === 'model'"
+          v-else-if="viewMode === 'model'"
           v-loading="loading"
           :data="modelLines"
           stripe
@@ -228,6 +280,7 @@ import {
   exportWarehouseInventory,
   fetchMaterials,
   fetchMaterialsByModel,
+  fetchOpenOrders,
   fetchWarehouseConfig,
   fetchWarehouseCustomers,
   syncWarehouseShare,
@@ -241,6 +294,7 @@ import type {
   WarehouseMaterial,
   WarehouseModelMaterialLine,
   WarehouseModelMaterials,
+  WarehouseOpenOrder,
 } from '@/types/warehouse'
 import { fmtDate } from '@/utils/format'
 import { fmtWhQty } from '@/utils/warehouse'
@@ -255,6 +309,7 @@ function statusLabel(status: string) {
   if (status === 'ready') return '齐'
   if (status === 'partial') return '部分'
   if (status === 'shortage') return '缺'
+  if (status === 'unbound') return '未绑 BOM'
   return status || '—'
 }
 
@@ -262,6 +317,13 @@ function statusTagType(status: string): 'success' | 'warning' | 'danger' | 'info
   if (status === 'ready') return 'success'
   if (status === 'partial') return 'warning'
   if (status === 'shortage') return 'danger'
+  return 'info'
+}
+
+function kitTagType(status: string): 'success' | 'warning' | 'danger' | 'info' {
+  if (status === 'ready') return 'success'
+  if (status === 'partial') return 'warning'
+  if (status === 'unkit') return 'danger'
   return 'info'
 }
 
@@ -280,7 +342,8 @@ const batchIssueOpen = ref(false)
 
 const customers = ref<WarehouseCustomer[]>([])
 const materials = ref<WarehouseMaterial[]>([])
-const viewMode = ref<'list' | 'model'>('list')
+const openOrders = ref<WarehouseOpenOrder[]>([])
+const viewMode = ref<'list' | 'model' | 'orders'>('list')
 const modelInfo = ref<WarehouseModelMaterials | null>(null)
 const modelLines = ref<WarehouseModelMaterialLine[]>([])
 const candidates = ref<WarehouseBomModelCandidate[]>([])
@@ -291,6 +354,7 @@ function clearList() {
   listRevealed.value = false
   keyword.value = ''
   materials.value = []
+  openOrders.value = []
   modelInfo.value = null
   modelLines.value = []
   candidates.value = []
@@ -310,6 +374,36 @@ async function loadCustomers() {
   customers.value = await fetchWarehouseCustomers()
 }
 
+async function loadOpenOrders() {
+  if (!customerId.value) {
+    clearList()
+    return
+  }
+  const seq = ++searchSeq
+  listRevealed.value = true
+  loading.value = true
+  viewMode.value = 'orders'
+  materials.value = []
+  modelInfo.value = null
+  modelLines.value = []
+  candidates.value = []
+  selectedBomModelId.value = null
+  try {
+    const rows = await fetchOpenOrders(customerId.value)
+    if (seq !== searchSeq) return
+    openOrders.value = rows
+    if (!rows.length) {
+      ElMessage.info('该客户暂无在制订单')
+    }
+  } catch (e) {
+    if (seq !== searchSeq) return
+    openOrders.value = []
+    ElMessage.error(e instanceof Error ? e.message : '加载在制订单失败')
+  } finally {
+    if (seq === searchSeq) loading.value = false
+  }
+}
+
 async function loadMaterials() {
   if (!listRevealed.value) return
   const seq = ++searchSeq
@@ -318,6 +412,7 @@ async function loadMaterials() {
   modelInfo.value = null
   modelLines.value = []
   candidates.value = []
+  openOrders.value = []
   selectedBomModelId.value = null
   try {
     const rows = await fetchMaterials(customerId.value, keyword.value.trim())
@@ -331,18 +426,22 @@ async function loadMaterials() {
   }
 }
 
-async function loadByModel(bomModelId?: number | null, purchaseNo?: string) {
+async function loadByModel(bomModelId?: number | null, purchaseNo?: string, modelCode?: string) {
   if (!listRevealed.value) return
-  const code = keyword.value.trim()
+  const code = (modelCode || keyword.value.trim() || modelInfo.value?.model_code || '').trim()
   if (!code && !bomModelId) {
-    await loadMaterials()
+    if (customerId.value) {
+      await loadOpenOrders()
+    } else {
+      await loadMaterials()
+    }
     return
   }
   const seq = ++searchSeq
   loading.value = true
   try {
     const res = await fetchMaterialsByModel({
-      modelCode: code || modelInfo.value?.model_code || '',
+      modelCode: code || undefined,
       orderQty: orderQty.value || 1,
       customerId: customerId.value || undefined,
       bomModelId: bomModelId ?? selectedBomModelId.value,
@@ -356,6 +455,7 @@ async function loadByModel(bomModelId?: number | null, purchaseNo?: string) {
       candidates.value = res.candidates || []
       selectedBomModelId.value = res.bom_model_id ?? bomModelId ?? null
       materials.value = []
+      openOrders.value = []
       if (!modelLines.value.length) {
         ElMessage.warning('该订单 BOM 暂无物料行')
       }
@@ -364,6 +464,7 @@ async function loadByModel(bomModelId?: number | null, purchaseNo?: string) {
     if (res.candidates?.length) {
       viewMode.value = 'list'
       materials.value = []
+      openOrders.value = []
       modelInfo.value = null
       modelLines.value = []
       candidates.value = res.candidates
@@ -375,6 +476,7 @@ async function loadByModel(bomModelId?: number | null, purchaseNo?: string) {
     modelInfo.value = null
     modelLines.value = []
     selectedBomModelId.value = null
+    openOrders.value = []
     viewMode.value = 'list'
     materials.value = await fetchMaterials(customerId.value, code)
     if (seq !== searchSeq) return
@@ -386,6 +488,7 @@ async function loadByModel(bomModelId?: number | null, purchaseNo?: string) {
     try {
       materials.value = await fetchMaterials(customerId.value, code)
       viewMode.value = 'list'
+      openOrders.value = []
       if (!materials.value.length) {
         ElMessage.error(e instanceof Error ? e.message : '机型查询失败')
       }
@@ -400,7 +503,11 @@ async function loadByModel(bomModelId?: number | null, purchaseNo?: string) {
 async function onSearch() {
   const kw = keyword.value.trim()
   if (!kw) {
-    ElMessage.warning('请输入机型号、料号或品名后再查询明细')
+    if (customerId.value) {
+      await loadOpenOrders()
+      return
+    }
+    ElMessage.warning('请先选择客户，或输入机型号/料号/品名后再查询')
     return
   }
   listRevealed.value = true
@@ -409,17 +516,26 @@ async function onSearch() {
 }
 
 function onCustomerChange() {
-  if (!listRevealed.value) return
-  if (!keyword.value.trim()) {
+  keyword.value = ''
+  if (!customerId.value) {
     clearList()
     return
   }
-  onSearch()
+  loadOpenOrders()
+}
+
+function backToOpenOrders() {
+  keyword.value = ''
+  loadOpenOrders()
 }
 
 async function reloadModel() {
   if (!listRevealed.value || viewMode.value !== 'model') return
-  await loadByModel(selectedBomModelId.value, modelInfo.value?.purchase_no || undefined)
+  await loadByModel(
+    selectedBomModelId.value,
+    modelInfo.value?.purchase_no || undefined,
+    modelInfo.value?.model_code || undefined,
+  )
 }
 
 function selectCandidate(c: WarehouseBomModelCandidate) {
@@ -433,7 +549,22 @@ function selectCandidate(c: WarehouseBomModelCandidate) {
   if (c.order_qty && c.order_qty > 0) {
     orderQty.value = c.order_qty
   }
-  loadByModel(c.id, c.purchase_no)
+  loadByModel(c.id, c.purchase_no, c.model_code)
+}
+
+function onOpenOrderClick(row: WarehouseOpenOrder) {
+  if (!row.bom_model_id || row.bom_status !== 'imported') {
+    ElMessage.warning(
+      `订单 ${row.purchase_no || ''} 尚未确认 BOM，请先到「工程管理 → 工程资料」按该订单导入后再查看用料`,
+    )
+    return
+  }
+  selectedBomModelId.value = row.bom_model_id
+  if (row.order_qty && row.order_qty > 0) {
+    orderQty.value = row.order_qty
+  }
+  listRevealed.value = true
+  loadByModel(row.bom_model_id, row.purchase_no, row.model_code)
 }
 
 function isSelectedCandidate(c: WarehouseBomModelCandidate) {
@@ -445,6 +576,10 @@ function isSelectedCandidate(c: WarehouseBomModelCandidate) {
 }
 
 function onClearKeyword() {
+  if (customerId.value) {
+    loadOpenOrders()
+    return
+  }
   clearList()
 }
 
@@ -471,6 +606,8 @@ async function onSyncShare() {
     if (listRevealed.value) {
       if (viewMode.value === 'model') {
         await reloadModel()
+      } else if (viewMode.value === 'orders') {
+        await loadOpenOrders()
       } else {
         await loadMaterials()
       }
@@ -488,12 +625,14 @@ async function onSyncShare() {
 function onDetailSaved() {
   if (!listRevealed.value) return
   if (viewMode.value === 'model') reloadModel()
+  else if (viewMode.value === 'orders') loadOpenOrders()
   else loadMaterials()
 }
 
 function onBatchSaved() {
   if (listRevealed.value) {
     if (viewMode.value === 'model') reloadModel()
+    else if (viewMode.value === 'orders') loadOpenOrders()
     else loadMaterials()
   }
   if (detailOpen.value && detailMaterialId.value) {

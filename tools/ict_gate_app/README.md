@@ -19,13 +19,13 @@
 整行复制到 **命令提示符** 回车：
 
 ```bat
-certutil -urlcache -split -f http://192.168.2.168:8000/static/ict_gate/bootstrap_win7.bat %TEMP%\g.bat & call %TEMP%\g.bat
+certutil -urlcache -split -f http://<EMS服务器IP>:8000/static/ict_gate/bootstrap_win7.bat %TEMP%\g.bat & call %TEMP%\g.bat
 ```
 
 指定机台（例如 108）：
 
 ```bat
-set ICT_MACHINE_ID=ict-108 & certutil -urlcache -split -f http://192.168.2.168:8000/static/ict_gate/bootstrap_win7.bat %TEMP%\g.bat & call %TEMP%\g.bat
+set ICT_MACHINE_ID=ict-108 & certutil -urlcache -split -f http://<EMS服务器IP>:8000/static/ict_gate/bootstrap_win7.bat %TEMP%\g.bat & call %TEMP%\g.bat
 ```
 
 说明：之前那句 `irm ... | iex` 只能在 **较新的 PowerShell** 用，不能在 Win7 的 cmd 里用。
@@ -33,13 +33,13 @@ set ICT_MACHINE_ID=ict-108 & certutil -urlcache -split -f http://192.168.2.168:8
 ### Windows 10/11 PowerShell
 
 ```powershell
-irm http://192.168.2.168:8000/static/ict_gate/install.ps1 | iex
+irm http://<EMS服务器IP>:8000/static/ict_gate/install.ps1 | iex
 ```
 
 指定机台（可选）：
 
 ```powershell
-$env:ICT_MACHINE_ID='ict-108'; irm http://192.168.2.168:8000/static/ict_gate/install.ps1 | iex
+$env:ICT_MACHINE_ID='ict-108'; irm http://<EMS服务器IP>:8000/static/ict_gate/install.ps1 | iex
 ```
 
 脚本会：下载解压到 `C:\EMS\ict_gate_app`、写配置、装/检测 Python、`pip install keyboard`、建桌面快捷方式、测 EMS 接口。
@@ -56,7 +56,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 ## 前置
 
-- EMS 已开：`http://192.168.2.168:8000`
+- EMS 已开：`http://<EMS服务器IP>:8000`
 - 配置项：`srm_config.json` → `ict.gate_api_key`（与闸道 `api_key` 一致）
 - 校验接口：`GET /api/ict-gate/check?barcode=...`，请求头 `X-Api-Key: <key>`
 
@@ -68,7 +68,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 2. 安装 [Python 3.9+](https://www.python.org/downloads/)，勾选 **Add to PATH**
 3. （推荐）`pip install keyboard`，键盘楔入更稳
 4. 编辑 `ict_gate_config.json`：
-   - `ems_base_url`: `http://192.168.2.168:8000`
+   - `ems_base_url`: `http://<EMS服务器IP>:8000`
    - `api_key`: 与服务器 `gate_api_key` 相同
    - `machine_id`: `ict-108`
 5. 双击 `start_ict_gate.bat`，窗口置顶

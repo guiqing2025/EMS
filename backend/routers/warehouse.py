@@ -36,6 +36,7 @@ from schemas import (
     WarehouseModelMaterialLineOut,
     WarehouseModelMaterialsOut,
     WarehouseMovementOut,
+    WarehouseOpenOrderOut,
     WarehouseOperationIn,
     WorkbookSnapshotOut,
 )
@@ -243,13 +244,113 @@ def warehouse_config(principal: AuthPrincipal = Depends(require_system_auth)):
 
 @router.get("/customers")
 def warehouse_customers(db: Session = Depends(get_db)):
-    names = {
-        row.customer_id: row.customer_name
-        for row in db.query(WarehouseMaterial.customer_id, WarehouseMaterial.customer_name).distinct()
-    }
+    """仓库客户下拉：把工程别名（如 wh_yilanke → yilanke）合并，避免同名出现两次。"""
+    from config import get_engineering_customers
+
+    alias_to_canon: dict[str, str] = {}
+    canon_names: dict[str, str] = {}
+    for c in get_engineering_customers():
+        cid = (c.get("customer_id") or "").strip()
+        if not cid:
+            continue
+        canon_names[cid] = (c.get("name") or cid).strip() or cid
+        alias_to_canon[cid] = cid
+        for alias in c.get("customer_id_aliases") or []:
+            a = str(alias).strip()
+            if a:
+                alias_to_canon[a] = cid
+
+    names: dict[str, str] = {}
+    for row in db.query(WarehouseMaterial.customer_id, WarehouseMaterial.customer_name).distinct():
+        raw = (row.customer_id or "").strip()
+        if not raw:
+            continue
+        cid = alias_to_canon.get(raw, raw)
+        names[cid] = canon_names.get(cid) or (row.customer_name or cid)
+
     for customer in load_config().get("customers", []):
-        names[customer["id"]] = customer.get("name") or customer["id"]
+        raw = (customer.get("id") or "").strip()
+        if not raw:
+            continue
+        cid = alias_to_canon.get(raw, raw)
+        names[cid] = (
+            canon_names.get(cid)
+            or customer.get("name")
+            or names.get(cid)
+            or cid
+        )
+
+    for cid, name in canon_names.items():
+        if cid in names:
+            names[cid] = name
+
     return [{"id": cid, "name": name} for cid, name in sorted(names.items(), key=lambda x: x[1])]
+
+
+_OPEN_ORDER_STATUS_LABELS = {
+    "ready": "齐套",
+    "partial": "部分",
+    "shortage": "缺料",
+    "unbound": "未绑 BOM",
+    "unknown": "未知",
+}
+
+
+@router.get("/open-orders", response_model=list[WarehouseOpenOrderOut])
+def list_open_orders(
+    customer_id: str = Query(..., min_length=1, description="客户 ID"),
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """物料明细：按客户列出在制订单 + 齐料摘要（读订单已存状态，不现场重算）。"""
+    from customer_kitting import CUSTOMER_KIT_LABELS, compute_customer_kit_status
+    from engineering_service import list_bom_order_catalog
+    from models import SrmOrder
+
+    catalog = list_bom_order_catalog(db, customer_id=customer_id.strip(), keyword="")
+    line_keys = [str(r.get("line_key") or "").strip() for r in catalog if r.get("line_key")]
+    order_map: dict[str, SrmOrder] = {}
+    if line_keys:
+        for row in db.query(SrmOrder).filter(SrmOrder.line_key.in_(line_keys)).all():
+            order_map[row.line_key] = row
+
+    out: list[WarehouseOpenOrderOut] = []
+    for r in catalog:
+        bom_status = r.get("bom_status") or "pending"
+        order = order_map.get(str(r.get("line_key") or "").strip())
+        order_qty = float(r.get("order_qty") or 0)
+        if bom_status != "imported" or not r.get("id"):
+            material_status = "unbound"
+        else:
+            material_status = (order.material_status if order else None) or "unknown"
+        kit_status = compute_customer_kit_status(
+            order.collected_sets_qty if order else None,
+            order_qty,
+            r.get("customer_id") or customer_id,
+            material_status if material_status != "unbound" else None,
+        )
+        out.append(
+            WarehouseOpenOrderOut(
+                line_key=str(r.get("line_key") or ""),
+                purchase_no=str(r.get("purchase_no") or ""),
+                model_code=str(r.get("model_code") or ""),
+                model_name=r.get("model_name"),
+                customer_id=str(r.get("customer_id") or customer_id),
+                customer_name=str(r.get("customer_name") or ""),
+                order_qty=order_qty,
+                bom_model_id=int(r["id"]) if r.get("id") else None,
+                bom_status=bom_status,
+                line_count=int(r.get("line_count") or 0),
+                material_status=material_status,
+                material_status_label=_OPEN_ORDER_STATUS_LABELS.get(material_status, material_status or "—"),
+                customer_kit_status=kit_status,
+                customer_kit_status_label=CUSTOMER_KIT_LABELS.get(kit_status, "—"),
+            )
+        )
+    # 缺料/部分优先，便于仓管先看
+    rank = {"shortage": 0, "partial": 1, "unknown": 2, "unbound": 3, "ready": 4}
+    out.sort(key=lambda x: (rank.get(x.material_status, 9), x.purchase_no, x.model_code))
+    return out
 
 
 @router.get("/finished-goods", response_model=list[FinishedGoodsRowOut])
@@ -358,7 +459,7 @@ def list_materials(
 
 @router.get("/materials/by-model", response_model=WarehouseModelMaterialsOut)
 def list_materials_by_model(
-    model_code: str = Query(..., min_length=1, description="机型号，如 120-200235-09"),
+    model_code: Optional[str] = Query(None, description="机型号；已传 bom_model_id 时可省略"),
     order_qty: float = Query(1, ge=0, description="按套数换算需求量；选中订单后可用订单数量"),
     customer_id: Optional[str] = None,
     bom_model_id: Optional[int] = Query(None, ge=1),
@@ -385,12 +486,16 @@ def list_materials_by_model(
         pn = (purchase_no or (bom.purchase_no if bom else "") or "").strip()
         return _out_from_bom(bom_model_id, order_qty, pn)
 
-    needle = eng_norm(model_code)
+    code = (model_code or "").strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="请提供机型号或 bom_model_id")
+
+    needle = eng_norm(code)
     pn_filter = (purchase_no or "").strip()
 
     order_rows = [
         r
-        for r in list_bom_order_catalog(db, customer_id=customer_id or "", keyword=model_code.strip())
+        for r in list_bom_order_catalog(db, customer_id=customer_id or "", keyword=code)
         if eng_norm(r.get("model_code")) == needle
     ]
     if pn_filter:
@@ -422,12 +527,12 @@ def list_materials_by_model(
     if order_rows:
         all_cands = [_cand(r) for r in order_rows]
         msg = (
-            f"机型「{model_code.strip()}」共 {len(order_rows)} 个在制订单"
+            f"机型「{code}」共 {len(order_rows)} 个在制订单"
             f"（已确认 BOM {len(imported)} / 待导入 {len(pending)}），请按订单号选择"
         )
         if not imported:
             msg = (
-                f"机型「{model_code.strip()}」有 {len(pending)} 个在制订单，均尚未确认 BOM，"
+                f"机型「{code}」有 {len(pending)} 个在制订单，均尚未确认 BOM，"
                 f"请先到工程管理按订单导入后再查用料"
             )
         return WarehouseModelMaterialsOut(
@@ -440,7 +545,7 @@ def list_materials_by_model(
     return WarehouseModelMaterialsOut(
         matched=False,
         order_qty=order_qty,
-        message=f"未找到机型「{model_code.strip()}」对应的在制订单",
+        message=f"未找到机型「{code}」对应的在制订单",
     )
 
 

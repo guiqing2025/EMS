@@ -17,7 +17,22 @@ $RepoRoot = Split-Path -Parent $Root
 $Log = Join-Path $env:TEMP "ems-uvicorn.log"
 $PidFile = Join-Path $env:TEMP "ems-uvicorn.pid"
 $LocalUrl = "http://127.0.0.1:8000"
-$PublicUrl = if ($env:EMS_PUBLIC_URL) { $env:EMS_PUBLIC_URL } else { "http://192.168.2.168:8000" }
+
+function Get-EmsPublicUrl([int]$Port = 8000) {
+    if ($env:EMS_PUBLIC_URL) { return $env:EMS_PUBLIC_URL.TrimEnd('/') }
+    $ip = $null
+    try {
+        $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.IPAddress -notlike '127.*' -and
+                $_.PrefixOrigin -ne 'WellKnown' -and
+                $_.IPAddress -notlike '169.254.*'
+            } |
+            Select-Object -ExpandProperty IPAddress -First 1
+    } catch { }
+    if ($ip) { return "http://${ip}:${Port}" }
+    return "http://127.0.0.1:${Port}"
+}
 
 if ($Help) {
     Write-Host "用法: .\start_ems.ps1 [-Force] [-Smoke]"
@@ -42,6 +57,8 @@ function Import-DotEnv([string]$Path, [switch]$Overwrite) {
 
 Import-DotEnv (Join-Path $RepoRoot "env\local.env")
 Import-DotEnv (Join-Path $Root ".env.postgres") -Overwrite
+
+$PublicUrl = Get-EmsPublicUrl 8000
 
 if ($env:EMS_USE_SQLITE -eq "1" -and $env:EMS_ALLOW_DEV_DB -ne "1") {
     if ($env:EMS_DB -eq "ems.dev.db" -or $env:EMS_DEV_MODE -eq "1") {

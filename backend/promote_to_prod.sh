@@ -1,6 +1,6 @@
 #!/bin/zsh
 # =============================================================================
-# 把当前代码热更新到生产（192.168.2.168:8000）
+# 把当前代码热更新到生产（本机 :8000）
 # - 只重启生产进程，让它加载磁盘上的最新代码/静态资源
 # - 绝不覆盖 ems.db（生产数据）
 # - 绝不拿 ems.dev.db 去替换生产库
@@ -13,7 +13,6 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
-PUBLIC_URL="${EMS_PUBLIC_URL:-http://192.168.2.168:8000}"
 YES=0
 SMOKE=0
 for arg in "$@"; do
@@ -23,6 +22,29 @@ for arg in "$@"; do
     -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
   esac
 done
+
+# 与 start_ems.sh 一致：优先 EMS_PUBLIC_URL / env/local.env，否则探测本机 IP
+LOCAL_ENV="${ROOT}/../env/local.env"
+if [[ -f "${LOCAL_ENV}" && -z "${EMS_PUBLIC_URL:-}" ]]; then
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    [[ -z "${line}" || "${line}" == \#* ]] && continue
+    [[ "${line}" != EMS_PUBLIC_URL=* ]] && continue
+    val="${line#EMS_PUBLIC_URL=}"
+    val="${val#"${val%%[![:space:]]*}"}"
+    val="${val%"${val##*[![:space:]]}"}"
+    val="${val#\"}"; val="${val%\"}"
+    val="${val#\'}"; val="${val%\'}"
+    [[ -n "${val}" ]] && export EMS_PUBLIC_URL="${val}"
+  done < "${LOCAL_ENV}"
+fi
+if [[ -n "${EMS_PUBLIC_URL:-}" ]]; then
+  PUBLIC_URL="${EMS_PUBLIC_URL}"
+else
+  ip="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
+  PUBLIC_URL="${ip:+http://${ip}:8000}"
+  PUBLIC_URL="${PUBLIC_URL:-http://127.0.0.1:8000}"
+fi
 
 echo "即将发布到生产："
 echo "  地址: ${PUBLIC_URL}"

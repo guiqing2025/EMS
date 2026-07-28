@@ -57,7 +57,7 @@ for i in {1..30}; do
     echo "开发环境已就绪（常驻终端，关 Cursor 也不停）："
     echo "  前端: http://127.0.0.1:5173"
     echo "  API:  http://127.0.0.1:8001/docs"
-    echo "  生产: http://192.168.2.168:8000"
+    echo "  生产: 本机 :8000（地址见 EMS_PUBLIC_URL 或启动脚本探测的局域网 IP）"
     curl -s -o /dev/null -w "检查 5173=%{http_code} 8001=%{http_code}\n" http://127.0.0.1:5173/ http://127.0.0.1:8001/docs
     exit 0
   fi

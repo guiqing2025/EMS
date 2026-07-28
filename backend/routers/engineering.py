@@ -1457,6 +1457,29 @@ def sync_model_assets_from_peer(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/review-auto-run")
+def run_auto_review_batch(
+    limit: int = 200,
+    after_id: int = 0,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """消化积压待审：齐套达标的自动通过，其余仍留人工。支持 after_id 分批以便进度条。"""
+    _require_eng_audit(principal)
+    from eng_review_service import auto_review_pending_batch
+
+    result = auto_review_pending_batch(
+        db,
+        limit=max(1, min(int(limit or 200), 500)),
+        after_id=max(0, int(after_id or 0)),
+    )
+    db.commit()
+    return {
+        "message": f"自动审核：本批扫描 {result['scanned']}，通过 {result['approved']}，仍待审 {result['skipped']}",
+        **result,
+    }
+
+
 @router.post("/models/{model_id}/review/approve")
 def review_approve(
     model_id: int,

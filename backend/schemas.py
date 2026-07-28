@@ -415,6 +415,25 @@ class WarehouseBomModelCandidateOut(BaseModel):
     bom_status: str = "pending"
 
 
+class WarehouseOpenOrderOut(BaseModel):
+    """物料明细：客户在制订单摘要（齐料状态读库，不现场重算）。"""
+
+    line_key: str = ""
+    purchase_no: str = ""
+    model_code: str = ""
+    model_name: Optional[str] = None
+    customer_id: str = ""
+    customer_name: str = ""
+    order_qty: float = 0
+    bom_model_id: Optional[int] = None
+    bom_status: str = "pending"
+    line_count: int = 0
+    material_status: str = "unknown"
+    material_status_label: str = "—"
+    customer_kit_status: str = "na"
+    customer_kit_status_label: str = "—"
+
+
 class FinishedGoodsRowOut(BaseModel):
     """成品库存（按订单行）。结存 = 订单数量 − 客户收货数 − 入库数。"""
 

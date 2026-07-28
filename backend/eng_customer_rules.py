@@ -27,6 +27,7 @@ DEFAULT_RULES: dict[str, Any] = {
     "workflow": {
         "require_placement": True,
         "allow_approve_without_mount": False,
+        "auto_approve": True,
     },
 }
 
@@ -52,6 +53,7 @@ BUILTIN_CUSTOMER_RULES: dict[str, dict[str, Any]] = {
         "workflow": {
             "require_placement": True,
             "allow_approve_without_mount": False,
+            "auto_approve": True,
         },
     },
     "A116": {
@@ -78,6 +80,7 @@ BUILTIN_CUSTOMER_RULES: dict[str, dict[str, Any]] = {
         "workflow": {
             "require_placement": True,
             "allow_approve_without_mount": False,
+            "auto_approve": True,
         },
     },
     "A067": {
@@ -198,6 +201,8 @@ def workflow_for(internal_code: str) -> dict[str, bool]:
     return {
         "require_placement": bool(raw.get("require_placement", True)),
         "allow_approve_without_mount": bool(raw.get("allow_approve_without_mount", False)),
+        # 默认开启：齐套且文件审核无失败时自动通过
+        "auto_approve": bool(raw.get("auto_approve", True)),
     }
 
 

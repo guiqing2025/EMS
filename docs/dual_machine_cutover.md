@@ -35,7 +35,7 @@
 ## 切流（内网入口）
 
 1. 确认 Windows 服务稳定、冒烟通过。
-2. 将原 `http://192.168.2.168:8000` 指向 Windows（改 DNS / 换机同 IP / 通知书签）。
+2. 将原 Mac 生产入口（内网 `:8000`）指向 Windows（改 DNS / 换机同 IP / 通知书签）。
 3. Mac 上停止生产 `8000`（或仅保留开发 `8001`）。
 4. 更新本仓库 Cursor 规则：生产 = Windows（见 `.cursor/rules/dev-prod-isolation.mdc`）。
 

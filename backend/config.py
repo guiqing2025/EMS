@@ -149,6 +149,8 @@ DEFAULT_CONFIG = {
     "hr_roster_path": "",
     "laser_import_default_path": "",
     "laser_print_register_path": "",
+    # 工程资料：齐套且文件审核无失败时自动通过（客户 rules.workflow.auto_approve 可单独关闭）
+    "eng_auto_review_enabled": True,
     "engineering_customers": [
         {
             "internal_code": "A123",
@@ -426,6 +428,7 @@ def save_config(data: dict) -> dict:
         "hr_roster_path",
         "laser_import_default_path",
         "laser_print_register_path",
+        "eng_auto_review_enabled",
         "engineering_customers",
     ):
         if key not in data:

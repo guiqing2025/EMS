@@ -8,7 +8,7 @@ alwaysApply: true
 | | 生产（权威） | 开发 |
 |--|--|--|
 | 机器 | **Windows** | **Mac** |
-| 地址 | Windows 本机 IP `:8000`（切流后替换原 `192.168.2.168:8000`） | `5173` / `8001` |
+| 地址 | Windows 本机 IP `:8000`（`EMS_PUBLIC_URL` 或启动自动探测） | `5173` / `8001` |
 | 数据库 | Postgres `ems_prod`（`backend/.env.postgres`） | `ems_dev` 或 `ems.dev.db` |
 | 启动 | `backend\start_ems.ps1` | `start_dev_env.sh` / `start_ems_dev.sh` |
 | 同步 | `scripts\sync.ps1` | `scripts/sync.sh` |

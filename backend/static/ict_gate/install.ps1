@@ -1,12 +1,18 @@
 # ICT 扫码闸道一键安装（在 ICT 的 Windows PowerShell 中运行）
-# 用法（管理员非必须，装 Python 时 winget 可能要确认）：
-#   irm http://192.168.2.168:8000/static/ict_gate/install.ps1 | iex
+# 用法：
+#   $env:EMS_BASE_URL='http://当前EMS服务器IP:8000'
+#   irm "$env:EMS_BASE_URL/static/ict_gate/install.ps1" | iex
 #
 # 或指定机台：
-#   $env:ICT_MACHINE_ID='ict-108'; irm http://192.168.2.168:8000/static/ict_gate/install.ps1 | iex
+#   $env:EMS_BASE_URL='http://当前EMS服务器IP:8000'
+#   $env:ICT_MACHINE_ID='ict-108'
+#   irm "$env:EMS_BASE_URL/static/ict_gate/install.ps1" | iex
 
 $ErrorActionPreference = 'Stop'
-$EmsBase = if ($env:EMS_BASE_URL) { $env:EMS_BASE_URL.TrimEnd('/') } else { 'http://192.168.2.168:8000' }
+$EmsBase = if ($env:EMS_BASE_URL) { $env:EMS_BASE_URL.TrimEnd('/') } else { '' }
+if (-not $EmsBase) {
+  throw "请先设置环境变量 EMS_BASE_URL（例如 http://192.168.x.x:8000），不要依赖写死的本机 IP"
+}
 $InstallRoot = if ($env:ICT_GATE_DIR) { $env:ICT_GATE_DIR } else { 'C:\EMS\ict_gate_app' }
 $ZipUrl = "$EmsBase/static/ict_gate/ict_gate_app.zip"
 $ZipPath = Join-Path $env:TEMP 'ict_gate_app.zip'

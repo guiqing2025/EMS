@@ -55,6 +55,24 @@ export interface WarehouseBomModelCandidate {
   bom_status?: string
 }
 
+/** 客户在制订单摘要（物料明细入口） */
+export interface WarehouseOpenOrder {
+  line_key: string
+  purchase_no: string
+  model_code: string
+  model_name?: string | null
+  customer_id: string
+  customer_name: string
+  order_qty: number
+  bom_model_id?: number | null
+  bom_status: string
+  line_count: number
+  material_status: string
+  material_status_label: string
+  customer_kit_status: string
+  customer_kit_status_label: string
+}
+
 export interface WarehouseModelMaterialLine {
   material_id?: number | null
   material_code: string

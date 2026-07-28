@@ -2,7 +2,13 @@
 setlocal EnableExtensions
 title ICT Gate Install Win7
 
-set "EMS=http://192.168.2.168:8000"
+set "EMS=%EMS_BASE_URL%"
+if "%EMS%"=="" (
+  echo 请先设置 EMS_BASE_URL，例如：
+  echo   set EMS_BASE_URL=http://当前EMS服务器IP:8000
+  pause
+  exit /b 1
+)
 set "ROOT=C:\EMS\ict_gate_app"
 set "ZIP=%TEMP%\ict_gate_app.zip"
 set "APIKEY=ems-ict-gate-2026-dx"

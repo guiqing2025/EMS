@@ -61,7 +61,7 @@ echo "  数据库: ${ROOT}/${DB_DEV}（SQLite，已屏蔽 DATABASE_URL）"
 echo "  定时同步: 关闭（不影响生产扫盘）"
 echo "  API: ${PUBLIC_URL}/docs"
 echo "  前端: ../frontend/start_frontend_dev.sh → http://127.0.0.1:5173（已代理到 8001）"
-echo "  生产同事入口仍是: http://192.168.2.168:8000"
+echo "  生产入口: 本机 :8000（勿写死 IP，用 EMS_PUBLIC_URL 或启动探测）"
 echo
 
 if [[ "$MODE" == "bg" ]]; then

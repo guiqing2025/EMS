@@ -63,25 +63,40 @@ _limiter = RateLimiter()
 
 
 def security_cfg() -> dict:
+    import os
+
     cfg = load_config().get("security") or {}
+    default_origins = [
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8001",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://localhost:8001",
+        "http://localhost:5173",
+    ]
+    origins = list(cfg.get("cors_origins") or default_origins)
+    extra = (os.environ.get("EMS_CORS_ORIGINS") or "").strip()
+    if extra:
+        for part in extra.split(","):
+            o = part.strip().rstrip("/")
+            if o and o not in origins:
+                origins.append(o)
+    # 内网任意主机 IP（不绑死某一台机器地址）
+    origin_regex = cfg.get("cors_origin_regex") or (
+        r"https?://("
+        r"localhost|127\.0\.0\.1|"
+        r"192\.168\.\d{1,3}\.\d{1,3}|"
+        r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+        r"172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}"
+        r")(:\d+)?$"
+    )
     return {
         "rate_limit_enabled": bool(cfg.get("rate_limit_enabled", True)),
         "login_per_minute": int(cfg.get("login_per_minute") or 20),
         "api_per_minute": int(cfg.get("api_per_minute") or 600),
         "ict_gate_per_minute": int(cfg.get("ict_gate_per_minute") or 300),
-        "cors_origins": list(
-            cfg.get("cors_origins")
-            or [
-                "http://192.168.2.168:8000",
-                "http://192.168.2.168:5173",
-                "http://127.0.0.1:8000",
-                "http://127.0.0.1:8001",
-                "http://127.0.0.1:5173",
-                "http://localhost:8000",
-                "http://localhost:8001",
-                "http://localhost:5173",
-            ]
-        ),
+        "cors_origins": origins,
+        "cors_origin_regex": origin_regex,
     }
 
 

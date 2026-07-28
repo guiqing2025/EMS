@@ -1,0 +1,1 @@
+import{C as i}from"./index-CcnluH3k.js";async function a(n){return i(`/packing/scans/${encodeURIComponent(n)}?status=pending&limit=15`)}async function e(n,t,c){return i("/packing/scan",{method:"POST",body:JSON.stringify({line_key:n,barcode:t,operator:c})})}async function o(n){return i("/packing/ship",{method:"POST",body:JSON.stringify(n)})}export{o as c,a as f,e as s};

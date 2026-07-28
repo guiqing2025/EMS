@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>深圳鼎雄电子科技有限公司 · EMS 订单中心</title>
   <link rel="icon" type="image/png" href="/static/assets/logo.png">
-  <link rel="stylesheet" href="/static/classic/style.css?v=48">
+  <link rel="stylesheet" href="/static/classic/style.css?v=49">
   <style>
     body.embed-mode #system-login { display: none !important; }
     body.embed-mode #app-main { display: grid !important; }
@@ -965,7 +965,7 @@
   <div class="modal hidden" id="eng-review-inbox-modal">
     <div class="modal-card modal-card-review-inbox">
       <h2>待处理事项</h2>
-      <p class="muted eng-review-inbox-hint">系统按账号推送；点「去处理」打开审核工作台，查看订单档案、资料齐套与贴装明细。</p>
+      <p class="muted eng-review-inbox-hint">系统按账号推送；齐套达标的会自动通过。未过的点「去处理」人工核对。审核员可用「消化积压」一键跑自动审核。</p>
       <div class="panel eng-review-inbox-panel">
         <table class="eng-review-inbox-table">
           <thead>
@@ -984,8 +984,20 @@
         </table>
       </div>
       <div class="modal-actions">
+        <button class="btn primary" type="button" id="btn-eng-review-auto-run" title="对当前待审齐套达标的自动通过">消化积压（自动审核）</button>
         <button class="btn" id="btn-eng-review-inbox-close">关闭</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="eng-auto-review-progress-modal">
+    <div class="modal-card eng-auto-review-progress-card">
+      <h2>自动审核进行中</h2>
+      <p class="muted" id="eng-auto-review-progress-text">正在扫描待审资料…</p>
+      <div class="eng-progress" aria-hidden="true">
+        <div class="eng-progress-bar" id="eng-auto-review-progress-bar"></div>
+      </div>
+      <p class="muted eng-auto-review-progress-stats" id="eng-auto-review-progress-stats"></p>
     </div>
   </div>
 
@@ -1019,9 +1031,9 @@
   </div>
 
   <div class="toast" id="toast"></div>
-  <script src="/static/classic/app.js?v=30"></script>
+  <script src="/static/classic/app.js?v=31"></script>
   <script src="/static/classic/warehouse.js?v=10"></script>
-  <script src="/static/classic/engineering.js?v=99"></script>
+  <script src="/static/classic/engineering.js?v=104"></script>
   <script src="/static/classic/scheduling.js?v=6"></script>
 </body>
 </html>

@@ -441,6 +441,8 @@ function stopNotifyPolling() {
 }
 
 async function api(path, options = {}) {
+  // 兼容误写 /api/xxx，避免打成 /api/api/... 触发 405
+  if (path.startsWith('/api/')) path = path.slice(4);
   const isPublicAuth = path.startsWith('/auth/login') || path.startsWith('/auth/status');
   const headers = {
     'Content-Type': 'application/json',
