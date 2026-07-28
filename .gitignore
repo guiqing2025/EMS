@@ -2,7 +2,7 @@
 .env
 .env.*
 !.env.example
-backend/.env.postgres
+# backend/.env.postgres  # 已按用户要求强制入库，见下方例外
 # 本机路径覆盖（由 sync 从 env/*.example 生成）
 env/local.env
 env/local.*.env
@@ -27,3 +27,9 @@ scripts/.sync_stamps/
 *.sql.gz
 
 backend/data/wang123_token.txt
+
+# tracked secrets (user requested) — 仓库勿公开
+!backend/.env.postgres
+!backend/.env.postgres.example
+!env/local.env
+!backend/data/wang123_token.txt
