@@ -1,6 +1,6 @@
 {
   "ems_base_url": "http://127.0.0.1:8000",
-  "api_key": "ems-ict-gate-2026-dx",
+  "api_key": "CHANGE_ME",
   "machine_id": "ict-pilot",
   "append_enter": true,
   "focus_delay_ms": 80,

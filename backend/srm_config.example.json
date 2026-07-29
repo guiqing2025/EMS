@@ -5,8 +5,8 @@
   "sync_daily_minute": 0,
   "auto_sync_enabled": true,
   "login_username": "sysadmin",
-  "login_password": "jb140313!",
-  "dashboard_password": "jb140313!",
+  "login_password": "CHANGE_ME",
+  "dashboard_password": "CHANGE_ME",
   "warehouse_share_path": "/Users/dx/Desktop/共享-测试软件资料/D-仓库表格/客户进销表",
   "warehouse_auto_sync_enabled": false,
   "warehouse_sync_interval_minutes": 120,
@@ -17,7 +17,7 @@
   "aoi": {
     "share": "mes_txt",
     "username": "A",
-    "password": "000000",
+    "password": "",
     "auto_sync_enabled": true,
     "sync_interval_minutes": 5,
     "max_files_per_sync": 0,
@@ -41,7 +41,7 @@
     "share": "ICT测试记录",
     "subpath": "test1",
     "timezone": "Asia/Shanghai",
-    "gate_api_key": "ems-ict-gate-2026-dx",
+    "gate_api_key": "",
     "sync_windows": [
       {
         "start": "08:00",
@@ -66,19 +66,19 @@
         "id": "ict-108",
         "host": "192.168.2.123",
         "username": "Administrator",
-        "password": "000000"
+        "password": ""
       },
       {
         "id": "ict-129",
         "host": "192.168.2.131",
         "username": "Administrator",
-        "password": "000000"
+        "password": ""
       },
       {
         "id": "ict-136",
         "host": "192.168.2.126",
         "username": "Administrator",
-        "password": "000000"
+        "password": ""
       }
     ]
   },
@@ -93,7 +93,7 @@
         "id": "enjiu-ats-156",
         "host": "192.168.2.156",
         "username": "Administrator",
-        "password": "000000"
+        "password": ""
       }
     ],
     "sources": [
@@ -101,7 +101,7 @@
         "id": "enjiu-ats-156",
         "host": "192.168.2.156",
         "username": "Administrator",
-        "password": "000000",
+        "password": "",
         "share": "ENJOY",
         "subpath": "ATS/log/Var_Type",
         "kind": "var_type_json"
@@ -110,7 +110,7 @@
         "id": "enjiu-digitest-156",
         "host": "192.168.2.156",
         "username": "Administrator",
-        "password": "000000",
+        "password": "",
         "share": "ENJOY",
         "subpath": "DigiTest/log",
         "kind": "digitest_log"
@@ -121,7 +121,7 @@
     "api_base": "https://zym.wang123.online",
     "web_base": "https://www.wang123.online",
     "username": "blue",
-    "password": "blue1",
+    "password": "",
     "auto_sync_enabled": true,
     "sync_interval_minutes": 30,
     "default_scan_status": "shipped"
@@ -129,7 +129,7 @@
   "tts": {
     "api_base": "http://tts.felicitysolar.com:8890",
     "username": "dx0101",
-    "password": "123456",
+    "password": "",
     "customer_id": "feilisi",
     "customer_name": "菲利斯",
     "auto_sync_enabled": true,
@@ -275,7 +275,7 @@
       "srm_base_url": "http://139.159.240.251:19190",
       "api_path": "",
       "login_name": "FL00676",
-      "password": "DX123456",
+      "password": "",
       "enabled": true
     },
     {
@@ -285,7 +285,7 @@
       "srm_base_url": "http://218.17.126.115:60801",
       "api_path": "/adpweb",
       "login_name": "100246",
-      "password": "123456789",
+      "password": "",
       "enabled": true
     },
     {
@@ -297,7 +297,7 @@
       "acct_id": "5d6dce3c732bc4",
       "entry_role": "SRM",
       "login_name": "07.01.0089",
-      "password": "dx123456**",
+      "password": "",
       "enabled": true
     },
     {
