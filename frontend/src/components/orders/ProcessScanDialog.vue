@@ -34,6 +34,8 @@ const props = defineProps<{
   modelValue: boolean
   station: ProcessStation
   purchaseNo: string
+  /** 订单行机型；无贴码登记时写入扫码记录，刷新后数量才能回显 */
+  modelCode?: string
 }>()
 
 const emit = defineEmits<{
@@ -114,6 +116,7 @@ async function onSubmit() {
       station: props.station,
       barcode: code,
       purchase_no: props.purchaseNo,
+      model_code: (props.modelCode || '').trim() || undefined,
     })
     if (res.status === 'ok') {
       lastKind.value = 'ok'

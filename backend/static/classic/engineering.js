@@ -13,6 +13,8 @@
   let subImportRows = [];
   let subImportSourceType = 'xlsx';
   let subImportSourceFile = '';
+  let subImportFormat = '';
+  let subRowsCache = [];
   let procSelectedId = null;
   let procStepDefs = [];
   let procCurrentRoute = null;
@@ -102,22 +104,12 @@
   }
 
   function renderCustomerRulesSummary() {
+    // 前台不展示客户规则摘要（规则仍在后台生效）
     const box = document.getElementById('eng-rules-summary');
-    if (!box || !activeEngCustomer) {
-      if (box) box.innerHTML = '';
-      return;
+    if (box) {
+      box.innerHTML = '';
+      box.hidden = true;
     }
-    const rules = activeEngCustomer.rules || {};
-    const checklist = rules.checklist || {};
-    const required = [];
-    if (checklist.bom !== false) required.push('BOM');
-    if (checklist.placement !== false) required.push('坐标');
-    if (checklist.gerber) required.push('Gerber');
-    if (checklist.refmap) required.push('位号图');
-    if (checklist.mount_resolved !== false) required.push('贴装识别');
-    const profile = rules.bom_parse_profile || 'auto';
-    const scope = (rules.assets_scope || 'model') === 'order' ? '资料按订单隔离' : '资料按机型共用';
-    box.innerHTML = `本客户规则：<strong>${escapeHtml(scope)}</strong> · 解析 <strong>${escapeHtml(String(profile))}</strong> · 必交 <strong>${escapeHtml(required.join(' / ') || '—')}</strong> · 录入 <strong>人工导入</strong>`;
   }
 
   function updatePickerChrome() {
@@ -125,13 +117,13 @@
     const p = document.querySelector('#eng-customer-picker .page-subtitle');
     if (activeEngTab === 'substitution') {
       if (h1) h1.textContent = '替代料';
-      if (p) p.textContent = '请选择客户后查看或维护替代/投产料规则';
+      if (p) p.textContent = '请选择客户后查看或导入《鼎雄 TDA 变更记录》';
     } else if (activeEngTab === 'process') {
       if (h1) h1.textContent = '工序对照';
       if (p) p.textContent = '请选择客户后维护机型工序对照';
     } else {
       if (h1) h1.textContent = '工程资料';
-      if (p) p.textContent = '请选择客户模块进入工作台；各客户资料与规则相互隔离';
+      if (p) p.textContent = '请选择客户模块进入工作台；各客户资料相互隔离';
     }
   }
 
@@ -144,8 +136,13 @@
       ? (activeEngCustomer.name || activeEngCustomer.internal_code)
       : '';
     if (activeEngTab === 'substitution') {
+      const subCid = (document.getElementById('eng-sub-customer')?.value || getActiveCustomerId() || '').trim();
       if (title) title.textContent = custLabel ? `替代料 · ${custLabel}` : '替代料';
-      if (sub) sub.textContent = '按客户查询与维护替代/投产料规则';
+      if (sub) {
+        sub.textContent = subCid === 'yonglian'
+          ? '按客户查询与维护委外投产替代表'
+          : '按《鼎雄 TDA 变更记录》一览表：登记·工单·产品·原/变更物料（点「详情」可看完整字段）';
+      }
     } else if (activeEngTab === 'process') {
       const filterCode = (document.getElementById('eng-proc-filter-code')?.value || '').trim().toUpperCase();
       const filterCust = filterCode ? resolveCustomerFromList(filterCode) : null;
@@ -236,15 +233,19 @@
     const counts = todoCounts || {};
     box.innerHTML = engCustomers.map((c) => {
       const ic = c.internal_code || '';
-      const n = Number(counts[ic] || 0);
-      const badge = n > 0 ? `<span class="eng-todo-badge">${n}</span>` : '';
+      const cstat = counts[ic] || {};
+      const imp = Number(cstat.pending_import || 0);
+      const rev = Number(cstat.pending_review || 0);
+      const badges = `
+        <span class="eng-card-stat eng-card-stat-import" title="待导入">待导入 <b>${imp}</b></span>
+        <span class="eng-card-stat eng-card-stat-review" title="待审核">待审核 <b>${rev}</b></span>`;
       const folder = c.bom_folder ? `<div class="eng-customer-card-meta">目录 ${escapeHtml(c.bom_folder)}</div>` : '';
       return `<button type="button" class="eng-customer-card" data-code="${escapeHtml(ic)}">
         <div class="eng-customer-card-top">
           <strong>${escapeHtml(ic)}</strong>
-          ${badge}
         </div>
         <div class="eng-customer-card-name">${escapeHtml(c.name || '')}</div>
+        <div class="eng-customer-card-stats">${badges}</div>
         ${folder}
         <div class="eng-customer-card-action">进入工作台 →</div>
       </button>`;
@@ -259,15 +260,22 @@
 
   async function loadCustomerTodoCounts() {
     const counts = {};
-    await Promise.all(engCustomers.map(async (c) => {
-      const ic = c.internal_code || '';
-      try {
-        const data = await engApi(`/todos?internal_code=${encodeURIComponent(ic)}`);
-        counts[ic] = Number(data?.count || 0);
-      } catch (_) {
-        counts[ic] = 0;
-      }
-    }));
+    try {
+      const data = await engApi('/status-summary');
+      const by = data?.by_customer || {};
+      engCustomers.forEach((c) => {
+        const ic = c.internal_code || '';
+        const one = by[ic] || {};
+        counts[ic] = {
+          pending_import: Number(one.pending_import || 0),
+          pending_review: Number(one.pending_review || 0),
+        };
+      });
+    } catch (_) {
+      engCustomers.forEach((c) => {
+        counts[c.internal_code || ''] = { pending_import: 0, pending_review: 0 };
+      });
+    }
     return counts;
   }
 
@@ -281,6 +289,7 @@
     selectedModelId = null;
     selectedModelKey = null;
     await loadCoverage();
+    await loadEngStatusBoard({ silent: true });
     await loadModels();
     startReviewTodoPolling();
   }
@@ -299,10 +308,29 @@
   async function engApi(path, opts = {}) {
     // 兼容误写 /api/xxx（API 前缀已是 /api，否则会变成 /api/api/... → 405）
     if (path.startsWith('/api/')) path = path.slice(4);
-    const res = await fetch(API + path, {
-      ...opts,
-      headers: { ...window.EMS.authHeaders(), 'Content-Type': 'application/json', ...(opts.headers || {}) },
-    });
+    const timeoutMs = opts.timeoutMs ?? 45000;
+    const { timeoutMs: _tm, signal: userSignal, ...fetchOpts } = opts;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    if (userSignal) {
+      if (userSignal.aborted) controller.abort();
+      else userSignal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+    let res;
+    try {
+      res = await fetch(API + path, {
+        ...fetchOpts,
+        signal: controller.signal,
+        headers: { ...window.EMS.authHeaders(), 'Content-Type': 'application/json', ...(fetchOpts.headers || {}) },
+      });
+    } catch (e) {
+      if (e && (e.name === 'AbortError' || controller.signal.aborted)) {
+        throw new Error('请求超时，请稍后重试');
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(formatApiDetail(err.detail, res.statusText));
@@ -366,49 +394,78 @@
     return String(window.EMS.getCurrentUser()?.username || '').trim().toLowerCase();
   }
 
-  /** 邱梦林 dxgc / engineering：资料导入与退回处理（dxgc 虽是 admin 也按资料员） */
-  function isEngImportOnly() {
-    const name = engUsername();
-    const role = window.EMS.getCurrentUser()?.role;
-    return name === 'dxgc' || role === 'engineering';
+  /** 黄星 dxsmt001：工程资料全局管理（导入+审核+导出+替代料/工序） */
+  function isEngFullManager() {
+    return engUsername() === 'dxsmt001';
   }
 
-  /** 黄星 dxsmt001 / 王总 dx003 / eng_auditor */
-  function isEngAuditOnly() {
+  /** 邱梦林 dxgc / 任玉娴 dxgc002 / engineering：资料导入与退回处理（虽是 admin 也按资料员） */
+  function isEngImportOnly() {
+    if (isEngFullManager()) return false;
     const name = engUsername();
     const role = window.EMS.getCurrentUser()?.role;
-    return name === 'dxsmt001' || name === 'dx003' || role === 'eng_auditor';
+    return name === 'dxgc' || name === 'dxgc002' || role === 'engineering';
+  }
+
+  /** 王总 dx003 / eng_auditor；dxpz001 仅查看+导出；黄星走全局管理，不套 audit-only */
+  function isEngAuditOnly() {
+    if (isEngFullManager()) return false;
+    const name = engUsername();
+    const role = window.EMS.getCurrentUser()?.role;
+    // dxpz001 为仅查看+导出，不算审核员（不收推送、无通过/退回）
+    if (name === 'dxpz001' || isEngViewExportOnly()) return false;
+    return name === 'dx003' || role === 'eng_auditor';
+  }
+
+  function isEngViewExportOnly() {
+    return engUsername() === 'dxpz001';
   }
 
   function canEngAudit() {
+    if (isEngFullManager()) return true;
     // 资料员不显示审核通过/退回（即使帐号角色是 admin）
     if (isEngImportOnly()) return false;
+    // dxpz001：仅查看资料与导出，不可审核通过/退回
+    if (isEngViewExportOnly()) return false;
     const role = window.EMS.getCurrentUser()?.role;
     return isEngAuditOnly() || role === 'admin' || role === 'planner' || engUsername() === 'wgq';
   }
 
   function applyEngImportOnlyUI() {
+    if (isEngFullManager()) {
+      document.body.classList.remove('eng-import-only', 'eng-audit-only');
+      const hintFull = document.getElementById('eng-review-hint');
+      if (hintFull) {
+        hintFull.textContent = '工程全局管理（黄星）：可导入/审核/导出 BOM，并维护替代料与工序对照。';
+      }
+      return;
+    }
     document.body.classList.toggle('eng-import-only', isEngImportOnly());
-    document.body.classList.toggle('eng-audit-only', isEngAuditOnly());
+    // 查看账号沿用审核员布局（隐藏导入），但无通过/退回、不收推送
+    document.body.classList.toggle('eng-audit-only', isEngAuditOnly() || isEngViewExportOnly());
     const hint = document.getElementById('eng-review-hint');
     if (hint) {
-      if (isEngAuditOnly()) {
-        hint.textContent = '审核员（黄星/王总）：齐套达标会自动通过；未过的点「待审核资料」→「去处理」。可用「消化积压」批量自动审核。';
+      if (isEngViewExportOnly()) {
+        hint.textContent = '查看账号（王玉兰）：可查看 BOM 审核资料并导出 XLSX；不可导入、不可审核通过/退回，不收待审推送。';
+      } else if (isEngAuditOnly()) {
+        hint.textContent = '审核员：导入/重导后进入「待审核资料」人工审核通过或退回。纯插件免贴片坐标；混贴/纯贴片须有坐标。';
       } else if (isEngImportOnly()) {
-        hint.textContent = '资料员邱梦林：导入 BOM / 坐标 / Gerber 后自动送审；齐套达标将自动通过，否则仍待人工审核。';
+        hint.textContent = '资料员（邱梦林/任玉娴）：须导入 BOM（+坐标/Gerber 按客户要求）；纯插件可选「纯插件」画像后免坐标送审。';
       } else {
-        hint.textContent = '导入后自动送审；齐套且文件审核无失败时系统自动通过，否则人工「审核通过/退回」。';
+        hint.textContent = '导入后自动送审；纯插件免坐标，混贴/纯贴片须有坐标。请审核员「审核通过/退回」。';
       }
     }
   }
 
   function switchEngTab(tab) {
     if (tab === 'customer-assets' || tab === 'files' || tab === 'docs') tab = 'bom';
-    // 审核员仅 BOM；资料员可进替代料（菜单入口），仍不可进工序对照
-    if (isEngAuditOnly() && tab !== 'bom') {
-      tab = 'bom';
-    } else if (isEngImportOnly() && tab !== 'bom' && tab !== 'substitution') {
-      tab = 'bom';
+    // 全局管理可进全部页签；审核员/查看仅 BOM；资料员可进替代料，仍不可进工序对照
+    if (!isEngFullManager()) {
+      if ((isEngAuditOnly() || isEngViewExportOnly()) && tab !== 'bom') {
+        tab = 'bom';
+      } else if (isEngImportOnly() && tab !== 'bom' && tab !== 'substitution') {
+        tab = 'bom';
+      }
     }
     activeEngTab = tab;
     document.querySelectorAll('[data-eng-tab]').forEach(btn => {
@@ -457,7 +514,155 @@
     return (el?.value || getActiveCustomerId() || '').trim();
   }
 
-    async function loadSubstitutionMeta() {
+    function tdaRemarkField(remark, label) {
+    const m = String(remark || '').match(new RegExp(`${label}:([^；]+)`));
+    return m ? m[1].trim() : '';
+  }
+
+  function isTdaSubMode(cid) {
+    return (cid || currentSubCustomerId() || '') !== 'yonglian';
+  }
+
+  function tdaCellStack(main, sub, extra) {
+    const m = (main || '').trim() || '—';
+    const s = (sub || '').trim();
+    const e = (extra || '').trim();
+    return `<div class="tda-main">${escapeHtml(m)}</div>`
+      + (s ? `<div class="tda-sub">${escapeHtml(s)}</div>` : '')
+      + (e ? `<div class="tda-extra" title="${escapeHtml(e)}">${escapeHtml(e)}</div>` : '');
+  }
+
+  function tdaSubTheadHtml() {
+    return `<tr class="tda-head">
+      <th>登记</th><th>工单编号</th><th>产品</th>
+      <th>原物料</th><th>变更物料</th>
+      <th>变更原因</th><th>核对</th><th>操作</th>
+    </tr>`;
+  }
+
+  function renderTdaSubRow(r, { editable } = { editable: true }) {
+    const reason = tdaRemarkField(r.remark, '变更原因') || '—';
+    const check = tdaRemarkField(r.remark, '核对结果') || '—';
+    const origQty = tdaRemarkField(r.remark, '原数量');
+    const qtyChange = r.qty != null ? r.qty : '—';
+    const pending = (r.confirm_status || '') === 'pending' || !r.sub_code;
+
+    const regCell = tdaCellStack(
+      `#${r.sub_order || '—'} · ${r.relation_type || 'OPEN'}`,
+      r.effective_date || '—',
+      tdaRemarkField(r.remark, '登记人') ? `登记人 ${tdaRemarkField(r.remark, '登记人')}` : '',
+    );
+    const prodCell = tdaCellStack(r.parent_code, r.parent_name, r.parent_spec);
+    const compCell = tdaCellStack(r.comp_code, r.comp_name, r.comp_spec)
+      + (origQty || r.qty != null ? `<div class="tda-qty">原数量 ${origQty || qtyChange}</div>` : '');
+
+    let subCell;
+    if (pending && editable) {
+      subCell = `<div class="tda-edit-stack">
+        <input type="text" class="eng-sub-manual-code" placeholder="变更物料料号" value="${escapeHtml(r.sub_code || '')}">
+        <input type="text" class="eng-sub-manual-name" placeholder="变更品名" value="${escapeHtml(r.sub_name || '')}">
+        <input type="text" class="eng-sub-manual-spec" placeholder="变更规格" value="${escapeHtml(r.sub_spec || '')}">
+        <div class="tda-qty tda-qty-change">变更数量 ${qtyChange}</div>
+      </div>`;
+    } else {
+      subCell = tdaCellStack(r.sub_code, r.sub_name, r.sub_spec)
+        + `<div class="tda-qty tda-qty-change">变更 ${qtyChange}</div>`;
+    }
+
+    const checkCls = check === '相同' ? 'tda-badge tda-badge-ok' : 'tda-badge';
+    let ops = '';
+    if (editable) {
+      ops = `<button type="button" class="btn btn-sm btn-eng-tda-detail" data-id="${r.id}">详情</button>`;
+      if (pending) {
+        ops += `<button type="button" class="btn btn-sm btn-primary btn-eng-sub-confirm" data-id="${r.id}">确认</button>`;
+      } else {
+        ops += `<button type="button" class="btn btn-sm btn-eng-sub-edit" data-id="${r.id}">编辑</button>`;
+      }
+      ops += `<button type="button" class="btn btn-sm btn-eng-sub-del" data-id="${r.id}">删</button>`;
+    }
+
+    return `<tr data-id="${r.id || ''}" class="${pending ? 'eng-sub-pending' : ''}">
+      <td class="tda-col-reg">${regCell}</td>
+      <td class="tda-col-po"><strong>${escapeHtml(r.purchase_no || '—')}</strong></td>
+      <td class="tda-col-prod">${prodCell}</td>
+      <td class="tda-col-comp">${compCell}</td>
+      <td class="tda-col-sub">${subCell}</td>
+      <td class="tda-col-reason" title="${escapeHtml(reason)}">${escapeHtml(reason)}</td>
+      <td class="tda-col-check"><span class="${checkCls}">${escapeHtml(check)}</span></td>
+      <td class="tda-col-ops">${ops}</td>
+    </tr>`;
+  }
+
+  function findSubRow(id) {
+    return subRowsCache.find((r) => Number(r.id) === Number(id));
+  }
+
+  function openTdaDetailModal(id) {
+    const r = findSubRow(id);
+    if (!r) return;
+    const modal = document.getElementById('eng-tda-detail-modal');
+    if (!modal) return;
+    modal.dataset.ruleId = String(id);
+    const set = (fid, val) => {
+      const el = document.getElementById(fid);
+      if (el) el.textContent = (val || '').trim() || '—';
+    };
+    const setInput = (fid, val) => {
+      const el = document.getElementById(fid);
+      if (el) el.value = (val || '').trim();
+    };
+    set('tda-d-seq', r.sub_order ? `#${r.sub_order}` : '—');
+    set('tda-d-date', r.effective_date);
+    set('tda-d-status', r.relation_type);
+    set('tda-d-po', r.purchase_no);
+    set('tda-d-parent', r.parent_code);
+    set('tda-d-pname', r.parent_name);
+    set('tda-d-pspec', r.parent_spec);
+    setInput('tda-d-comp', r.comp_code);
+    setInput('tda-d-cname', r.comp_name);
+    setInput('tda-d-cspec', r.comp_spec);
+    set('tda-d-cqty', tdaRemarkField(r.remark, '原数量') || (r.qty != null ? String(r.qty) : '—'));
+    setInput('tda-d-sub', r.sub_code);
+    setInput('tda-d-sname', r.sub_name);
+    setInput('tda-d-sspec', r.sub_spec);
+    set('tda-d-sqty', r.qty != null ? String(r.qty) : '—');
+    set('tda-d-reason', tdaRemarkField(r.remark, '变更原因'));
+    set('tda-d-check', tdaRemarkField(r.remark, '核对结果'));
+    set('tda-d-registrant', tdaRemarkField(r.remark, '登记人'));
+    set('tda-d-legacy', tdaRemarkField(r.remark, '0703替代物料表'));
+    modal.classList.remove('hidden');
+  }
+
+  function closeTdaDetailModal() {
+    document.getElementById('eng-tda-detail-modal')?.classList.add('hidden');
+  }
+
+  async function saveTdaDetailModal() {
+    const modal = document.getElementById('eng-tda-detail-modal');
+    const id = Number(modal?.dataset.ruleId || 0);
+    if (!id) return;
+    const subCode = document.getElementById('tda-d-sub')?.value?.trim() || '';
+    const subName = document.getElementById('tda-d-sname')?.value?.trim() || '';
+    const subSpec = document.getElementById('tda-d-sspec')?.value?.trim() || '';
+    if (!subCode) {
+      window.EMS.showToast('请填写变更物料料号', 'error');
+      return;
+    }
+    try {
+      await engApi('/substitutions/' + id + '/confirm-manual', {
+        method: 'POST',
+        body: JSON.stringify({ sub_code: subCode, sub_name: subName || null, sub_spec: subSpec || null }),
+      });
+      window.EMS.showToast('已保存', 'success');
+      closeTdaDetailModal();
+      await loadSubstitutionMeta();
+      await loadSubstitutions(subPage);
+    } catch (e) {
+      window.EMS.showToast(e.message, 'error');
+    }
+  }
+
+  async function loadSubstitutionMeta() {
     const cid = currentSubCustomerId();
     const el = document.getElementById('eng-sub-meta');
     if (!cid) {
@@ -467,10 +672,11 @@
     const meta = await engApi('/substitutions/meta?customer_id=' + encodeURIComponent(cid));
     if (el) {
       el.textContent = meta.row_count
-        ? `${meta.customer_name || cid} · 规则 ${meta.row_count} 条 · 更新 ${fmtTime(meta.synced_at)}`
-        : `${meta.customer_name || cid} · 暂无规则（可下载模板后导入 XLSX）`;
+        ? `${meta.customer_name || cid} · TDA变更 ${meta.row_count} 条 · 更新 ${fmtTime(meta.synced_at)}`
+        : `${meta.customer_name || cid} · 暂无记录（请下载「鼎雄TDA变更记录」模板后导入）`;
     }
     document.body.classList.toggle('eng-sub-yonglian', cid === 'yonglian');
+    document.body.classList.toggle('eng-sub-tda', cid !== 'yonglian');
     syncSubCustomerMode(cid);
   }
 
@@ -490,24 +696,19 @@
           <th>合并需求</th><th>机型绑定</th><th>操作</th>
         </tr>`;
       } else {
-        thead.innerHTML = `<tr>
-          <th class="eng-sub-col-comp">元件品号</th><th>元件品名</th><th>元件规格</th><th>单位</th>
-          <th class="eng-sub-parent-col">主件品号</th><th class="eng-sub-parent-col">主件品名</th>
-          <th>关系</th><th class="eng-sub-col-sub">替代料号</th><th>替代品名</th><th>替代规格</th>
-          <th>顺序</th><th>生效</th><th>失效</th><th>数量</th><th>备注</th><th>来源</th><th>操作</th>
-        </tr>`;
+        thead.innerHTML = tdaSubTheadHtml();
       }
     }
     document.querySelectorAll('#eng-sub-import-modal .eng-sub-col-comp').forEach((el) => {
-      el.textContent = isYl ? '子项物料编码' : '元件品号';
+      el.textContent = isYl ? '子项物料编码' : '材料品号';
     });
     document.querySelectorAll('#eng-sub-import-modal .eng-sub-col-sub').forEach((el) => {
-      el.textContent = isYl ? '投产物料编码' : '替代料号';
+      el.textContent = isYl ? '投产物料编码' : '变更物料料号';
     });
   }
 
   function subTableColspan() {
-    return currentSubCustomerId() === 'yonglian' ? 15 : 17;
+    return currentSubCustomerId() === 'yonglian' ? 15 : 8;
   }
 
   function ylBoardTagFromRule(r) {
@@ -594,7 +795,10 @@
         ${boardCells}
         <td>${merge}</td>
         <td class="cell-wrap" title="${escapeHtml(g.parents.join('；'))}">${escapeHtml(g.parents.length ? g.parents.join('；') : '—')}</td>
-        <td><button type="button" class="btn btn-sm btn-eng-sub-del-group" data-ids="${g.ids.join(',')}">删除</button></td>
+        <td>
+          <button type="button" class="btn btn-sm btn-eng-sub-edit-group" data-ids="${g.ids.join(',')}">编辑</button>
+          <button type="button" class="btn btn-sm btn-eng-sub-del-group" data-ids="${g.ids.join(',')}">删除</button>
+        </td>
       </tr>`;
     }).join('');
     tbody.querySelectorAll('.btn-eng-sub-del-group').forEach((btn) => {
@@ -610,6 +814,9 @@
           window.EMS.showToast(e.message, 'error');
         }
       });
+    });
+    tbody.querySelectorAll('.btn-eng-sub-edit-group').forEach((btn) => {
+      btn.addEventListener('click', () => beginEditYonglianGroup(btn.closest('tr')));
     });
   }
 
@@ -644,23 +851,22 @@
     const params = new URLSearchParams({ page: String(page), page_size: '50', customer_id: cid });
     if (keyword) params.set('keyword', keyword);
     const rows = await engApi('/substitutions?' + params.toString());
+    subRowsCache = rows || [];
     if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="${cols}" class="empty">该客户暂无替代料规则，请导入 XLSX 或手工新增</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${cols}" class="empty">该客户暂无 TDA 变更记录，请下载模板后导入 XLSX</td></tr>`;
     } else {
-      tbody.innerHTML = rows.map(r => `
-        <tr data-id="${r.id}">
-          <td>${escapeHtml(r.comp_code)}</td><td>${escapeHtml(r.comp_name || '—')}</td><td class="cell-wrap">${escapeHtml(r.comp_spec || '—')}</td>
-          <td>${escapeHtml(r.comp_unit || '—')}</td>
-          <td class="eng-sub-parent-col">${escapeHtml(r.parent_code || '—')}</td><td class="eng-sub-parent-col">${escapeHtml(r.parent_name || '—')}</td>
-          <td>${escapeHtml(r.relation_type || '—')}</td><td><strong>${escapeHtml(r.sub_code)}</strong></td>
-          <td>${escapeHtml(r.sub_name || '—')}</td><td class="cell-wrap">${escapeHtml(r.sub_spec || '—')}</td>
-          <td>${escapeHtml(r.sub_order || '—')}</td><td>${escapeHtml(r.effective_date || '—')}</td><td>${escapeHtml(r.expiry_date || '—')}</td>
-          <td>${r.qty ?? '—'}</td><td class="cell-wrap">${escapeHtml(r.remark || '—')}</td>
-          <td class="cell-muted">${escapeHtml(r.source_type || '—')}</td>
-          <td><button type="button" class="btn btn-sm btn-eng-sub-del" data-id="${r.id}">删除</button></td>
-        </tr>`).join('');
+      tbody.innerHTML = rows.map((r) => renderTdaSubRow(r)).join('');
       tbody.querySelectorAll('.btn-eng-sub-del').forEach((btn) => {
         btn.addEventListener('click', () => deleteSubstitution(Number(btn.dataset.id)));
+      });
+      tbody.querySelectorAll('.btn-eng-sub-confirm').forEach((btn) => {
+        btn.addEventListener('click', () => confirmSubstitutionManual(Number(btn.dataset.id), btn.closest('tr')));
+      });
+      tbody.querySelectorAll('.btn-eng-sub-edit').forEach((btn) => {
+        btn.addEventListener('click', () => openTdaDetailModal(Number(btn.dataset.id)));
+      });
+      tbody.querySelectorAll('.btn-eng-tda-detail').forEach((btn) => {
+        btn.addEventListener('click', () => openTdaDetailModal(Number(btn.dataset.id)));
       });
     }
     const info = document.getElementById('eng-sub-page-info');
@@ -679,10 +885,117 @@
     }
   }
 
-  function openSubImportModal(title, rows, sourceType, sourceFile, message) {
+  function cellTextOrEmpty(td) {
+    const t = (td?.textContent || '').trim();
+    return t === '—' ? '' : t;
+  }
+
+  function fillSubInputs(tr, code, name, spec) {
+    const tds = tr?.children;
+    if (!tds) return;
+    const isYl = currentSubCustomerId() === 'yonglian';
+    const subIdx = isYl ? 5 : 11;
+    if (tds.length <= subIdx + 2) return;
+    tds[subIdx].innerHTML = `<input type="text" class="eng-sub-manual-code" placeholder="${isYl ? '投产物料编码' : '变更物料料号'}" value="${escapeHtml(code || '')}">`;
+    tds[subIdx + 1].innerHTML = `<input type="text" class="eng-sub-manual-name" placeholder="${isYl ? '物料名称' : '变更品名'}" value="${escapeHtml(name || '')}">`;
+    tds[subIdx + 2].innerHTML = `<input type="text" class="eng-sub-manual-spec" placeholder="${isYl ? '规格型号' : '变更规格'}" value="${escapeHtml(spec || '')}">`;
+  }
+
+  function beginEditSubstitution(tr) {
+    if (currentSubCustomerId() !== 'yonglian') {
+      const id = Number(tr?.dataset?.id || 0);
+      if (id) openTdaDetailModal(id);
+      return;
+    }
+    beginEditYonglianGroup(tr);
+  }
+
+  function beginEditYonglianGroup(tr) {
+    if (!tr || tr.classList.contains('eng-sub-editing')) return;
+    const tds = tr.children;
+    if (!tds || tds.length < 15) return;
+    const code = cellTextOrEmpty(tds[2]);
+    const name = cellTextOrEmpty(tds[3]);
+    const spec = cellTextOrEmpty(tds[4]);
+    tds[2].innerHTML = `<input type="text" class="eng-sub-manual-code" placeholder="投产物料编码" value="${escapeHtml(code)}">`;
+    tds[3].innerHTML = `<input type="text" class="eng-sub-manual-name" placeholder="物料名称" value="${escapeHtml(name)}">`;
+    tds[4].innerHTML = `<input type="text" class="eng-sub-manual-spec" placeholder="规格型号" value="${escapeHtml(spec)}">`;
+    const last = tds[tds.length - 1];
+    last.innerHTML = `
+      <button type="button" class="btn btn-sm btn-primary btn-eng-sub-save-group">保存</button>
+      <button type="button" class="btn btn-sm btn-eng-sub-cancel">取消</button>`;
+    tr.classList.add('eng-sub-editing');
+    last.querySelector('.btn-eng-sub-save-group')?.addEventListener('click', () => saveYonglianGroup(tr));
+    last.querySelector('.btn-eng-sub-cancel')?.addEventListener('click', () => loadSubstitutions(subPage));
+    tr.querySelector('.eng-sub-manual-code')?.focus();
+  }
+
+  async function saveYonglianGroup(tr) {
+    const ids = String(tr?.dataset?.ids || '').split(',').map((x) => Number(x)).filter(Boolean);
+    const subCode = tr.querySelector('.eng-sub-manual-code')?.value?.trim() || '';
+    const subName = tr.querySelector('.eng-sub-manual-name')?.value?.trim() || '';
+    const subSpec = tr.querySelector('.eng-sub-manual-spec')?.value?.trim() || '';
+    if (!ids.length) return;
+    if (!subCode) {
+      window.EMS.showToast('请填写投产物料编码', 'error');
+      return;
+    }
+    if (!confirm('修改后将同步到发料单与 BOM，是否继续？')) return;
+    try {
+      for (const id of ids) {
+        await engApi('/substitutions/' + id + '/confirm-manual', {
+          method: 'POST',
+          body: JSON.stringify({
+            sub_code: subCode,
+            sub_name: subName || null,
+            sub_spec: subSpec || null,
+          }),
+        });
+      }
+      window.EMS.showToast('已更新替代料，已同步发料/BOM', 'success');
+      await loadSubstitutionMeta();
+      await loadSubstitutions(subPage);
+    } catch (e) {
+      window.EMS.showToast(e.message, 'error');
+    }
+  }
+
+  async function confirmSubstitutionManual(id, tr, opts = {}) {
+    if (!id || !tr) return;
+    const subCode = tr.querySelector('.eng-sub-manual-code')?.value?.trim() || '';
+    const subName = tr.querySelector('.eng-sub-manual-name')?.value?.trim() || '';
+    const subSpec = tr.querySelector('.eng-sub-manual-spec')?.value?.trim() || '';
+    if (!subCode) {
+      window.EMS.showToast('请填写变更物料料号', 'error');
+      return;
+    }
+    const editing = !!opts.editing;
+    const msg = editing
+      ? '修改后将同步到发料单与 BOM，是否继续？'
+      : '确认后将同步到发料单与 BOM，是否继续？';
+    if (!confirm(msg)) return;
+    try {
+      await engApi('/substitutions/' + id + '/confirm-manual', {
+        method: 'POST',
+        body: JSON.stringify({
+          sub_code: subCode,
+          sub_name: subName || null,
+          sub_spec: subSpec || null,
+        }),
+      });
+      window.EMS.showToast(editing ? '已更新替代料，已同步发料/BOM' : '已确认，已同步发料/BOM', 'success');
+      await loadSubstitutionMeta();
+      await loadSubstitutions(subPage);
+    } catch (e) {
+      window.EMS.showToast(e.message, 'error');
+    }
+  }
+
+  function openSubImportModal(title, rows, sourceType, sourceFile, message, format) {
     subImportRows = rows || [];
     subImportSourceType = sourceType || 'xlsx';
     subImportSourceFile = sourceFile || '';
+    subImportFormat = format || '';
     document.getElementById('eng-sub-import-title').textContent = title || '导入预览';
     document.getElementById('eng-sub-import-msg').textContent = message || `共 ${subImportRows.length} 行，请确认后写入`;
     const tb = document.getElementById('eng-sub-import-tbody');
@@ -708,22 +1021,10 @@
           </tr>`).join('')
         : '<tr><td colspan="10" class="empty">无有效行</td></tr>';
     } else {
-      if (thead) {
-        thead.innerHTML = `<tr>
-          <th class="eng-sub-col-comp">元件品号</th><th class="eng-sub-col-sub">替代料号</th>
-          <th class="eng-sub-parent-col">主件品号</th><th>元件品名</th><th>替代品名</th><th>备注</th>
-        </tr>`;
-      }
+      if (thead) thead.innerHTML = tdaSubTheadHtml();
       tb.innerHTML = subImportRows.length
-        ? subImportRows.map((r) => `<tr>
-            <td>${escapeHtml(r.comp_code || '')}</td>
-            <td>${escapeHtml(r.sub_code || '')}</td>
-            <td class="eng-sub-parent-col">${escapeHtml(r.parent_code || '')}</td>
-            <td>${escapeHtml(r.comp_name || '')}</td>
-            <td>${escapeHtml(r.sub_name || '')}</td>
-            <td class="cell-wrap" title="${escapeHtml(r.remark || '')}">${escapeHtml(r.remark || '—')}</td>
-          </tr>`).join('')
-        : `<tr><td colspan="6" class="empty">无有效行</td></tr>`;
+        ? subImportRows.map((r) => renderTdaSubRow(r, { editable: false })).join('')
+        : `<tr><td colspan="8" class="empty">无有效行</td></tr>`;
     }
     document.getElementById('eng-sub-import-modal')?.classList.remove('hidden');
   }
@@ -743,13 +1044,16 @@
       window.EMS.showToast('没有可导入的行', 'error');
       return;
     }
-    const mode = document.getElementById('eng-sub-import-mode')?.value || 'append';
+    const useReplace = subImportFormat === 'tda' || (cid !== 'yonglian' && subImportFormat !== 'yonglian');
+    if (useReplace && !confirm('导入将删除该客户现有全部 TDA/替代记录，并以本次表格全量替换。是否继续？')) {
+      return;
+    }
     try {
       const res = await engApi('/substitutions/import-confirm', {
         method: 'POST',
         body: JSON.stringify({
           customer_id: cid,
-          mode,
+          mode: useReplace ? 'replace' : 'add',
           source_type: subImportSourceType,
           source_file: subImportSourceFile,
           rows: subImportRows,
@@ -780,7 +1084,7 @@
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(formatApiDetail(data.detail, res.statusText));
-    openSubImportModal('XLSX 导入预览', data.rows || [], 'xlsx', file.name, data.message || '');
+    openSubImportModal('XLSX 导入预览', data.rows || [], 'xlsx', file.name, data.message || '', data.format || '');
   }
 
   async function addSubstitutionManual() {
@@ -790,11 +1094,15 @@
       return;
     }
     const isYl = cid === 'yonglian';
-    const comp = prompt(isYl ? '子项物料编码（BOM 原料）' : '元件品号（主料号）');
+    // 机型 → 订单号 → 原物料 → 替代物料
+    const purchaseNo = prompt('工单编号（可留空）');
+    if (purchaseNo === null) return;
+    const parent = prompt('产品品号 / 机型（可留空）');
+    if (parent === null) return;
+    const comp = prompt(isYl ? '子项物料编码（BOM 原料）' : '材料品号（原物料）');
     if (!comp) return;
-    const sub = prompt(isYl ? '投产物料编码（实际发料/替代）' : '替代料号');
+    const sub = prompt(isYl ? '投产物料编码（实际发料）' : '变更物料料号');
     if (!sub) return;
-    const parent = isYl ? '' : (prompt('主件/机型品号（可留空）') || '');
     try {
       await engApi('/substitutions', {
         method: 'POST',
@@ -802,8 +1110,9 @@
           customer_id: cid,
           comp_code: comp.trim(),
           sub_code: sub.trim(),
-          parent_code: parent.trim(),
-          relation_type: '替代料件',
+          parent_code: (parent || '').trim(),
+          purchase_no: (purchaseNo || '').trim(),
+          relation_type: isYl ? '替代料件' : 'OPEN',
         }),
       });
       window.EMS.showToast('已新增', 'success');
@@ -819,7 +1128,7 @@
     const a = document.createElement('a');
     const qs = cid ? `?customer_id=${encodeURIComponent(cid)}` : '';
     a.href = API + '/substitutions/template.xlsx' + qs;
-    a.download = cid === 'yonglian' ? 'yonglian_substitution_template.xlsx' : 'substitution_template.xlsx';
+    a.download = cid === 'yonglian' ? 'yonglian_substitution_template.xlsx' : '鼎雄TDA变更记录模板.xlsx';
     // 带鉴权：用 fetch blob
     fetch(a.href, { headers: window.EMS.authHeaders() })
       .then(async (res) => {
@@ -858,10 +1167,14 @@
     const steps = {
       laser_label: false,
       smt: false,
+      pre_oven_aoi: false,
       insert: false,
+      post_solder: false,
+      post_oven_label: false,
       test: false,
       conformal: { enabled: false, type: '普通三防' },
-      potting: false,
+      // 界面已去掉灌胶勾选，保存时保留原值以免冲掉历史数据
+      potting: !!procCurrentRoute?.steps?.potting,
     };
     document.querySelectorAll('#eng-proc-steps input[data-step]').forEach(inp => {
       const key = inp.dataset.step;
@@ -880,7 +1193,10 @@
     return {
       laser_label: !!steps.laser_label,
       smt: !!steps.smt,
+      pre_oven_aoi: !!steps.pre_oven_aoi,
       insert: !!steps.insert,
+      post_solder: !!steps.post_solder,
+      post_oven_label: !!steps.post_oven_label,
       test: !!steps.test,
       conformal_enabled: !!steps.conformal?.enabled,
       conformal_type: steps.conformal?.type || '普通三防',
@@ -891,9 +1207,12 @@
   function buildRoutePreview(steps) {
     const parts = [];
     if (steps.laser_label) parts.push('镭雕/贴码');
-    if (steps.smt) parts.push('SMT');
+    if (steps.smt) parts.push('SMT-AOI');
+    if (steps.pre_oven_aoi) parts.push('炉前AOI');
     if (steps.insert) parts.push('插件');
-    if (steps.test) parts.push('测试');
+    if (steps.post_solder) parts.push('后焊');
+    if (steps.post_oven_label) parts.push('炉后贴码');
+    if (steps.test) parts.push('ICT测试');
     if (steps.conformal?.enabled) {
       const t = steps.conformal.type || '普通三防';
       parts.push(t === '普通三防' ? '三防' : `三防(${t})`);
@@ -915,7 +1234,7 @@
     const wrap = document.getElementById('eng-proc-steps');
     if (!wrap) return;
     const s = steps || {
-      laser_label: false, smt: false, insert: false, test: false,
+      laser_label: false, smt: false, pre_oven_aoi: false, insert: false, post_solder: false, post_oven_label: false, test: false,
       conformal: { enabled: false, type: '普通三防' }, potting: false,
     };
     wrap.innerHTML = procStepDefs.map(def => {
@@ -970,6 +1289,8 @@
       rawEl.classList.toggle('hidden', !route.raw_process);
     }
     renderProcStepForm(route.steps);
+    const delBtn = document.getElementById('btn-eng-proc-delete');
+    if (delBtn) delBtn.classList.toggle('hidden', !(route.id > 0));
   }
 
   function hideProcEditor() {
@@ -979,6 +1300,7 @@
     document.getElementById('eng-proc-empty')?.classList.remove('hidden');
     const title = document.getElementById('eng-proc-title');
     if (title) title.textContent = '选择或新建机型配置工序';
+    document.getElementById('btn-eng-proc-delete')?.classList.add('hidden');
   }
 
   async function loadProcModels() {
@@ -1025,7 +1347,7 @@
       model_name: '',
       source: 'manual',
       steps: {
-        laser_label: false, smt: false, insert: false, test: false,
+        laser_label: false, smt: false, pre_oven_aoi: false, insert: false, post_solder: false, post_oven_label: false, test: false,
         conformal: { enabled: false, type: '普通三防' }, potting: false,
       },
       raw_process: null,
@@ -1057,6 +1379,26 @@
       showProcEditor(saved, false);
     } catch (e) {
       window.EMS.showToast(e.message, 'error');
+    }
+  }
+
+  async function deleteProcRoute() {
+    const id = procSelectedId || procCurrentRoute?.id;
+    if (!id) {
+      window.EMS.showToast('请先选择已保存的机型再删除', 'error');
+      return;
+    }
+    const label = `${procCurrentRoute?.internal_code || ''} · ${procCurrentRoute?.model_code || id}`;
+    if (!confirm(`确认删除工序对照「${label}」？删除后扫码将按未配置处理。`)) return;
+    try {
+      const res = await engApi(`/process-routes/${id}`, { method: 'DELETE' });
+      window.EMS.showToast(res.message || '已删除');
+      procSelectedId = null;
+      hideProcEditor();
+      await loadProcMeta();
+      await loadProcModels();
+    } catch (e) {
+      window.EMS.showToast(e.message || '删除失败', 'error');
     }
   }
 
@@ -1104,12 +1446,72 @@
     const placeBtn = document.getElementById('btn-eng-place-delete');
     const gerberBtn = document.getElementById('btn-eng-gerber-delete');
     const refmapBtn = document.getElementById('btn-eng-refmap-delete');
+    const placeExportBtn = document.getElementById('btn-eng-place-export');
+    const gerberExportBtn = document.getElementById('btn-eng-gerber-export');
     const hasPlace = !!(row?.placement_file_id && row?.placement_line_count);
     const hasGerber = !!(row?.gerber_package_id && row?.gerber_file_count);
     const hasRefmap = !!(row?.refmap_file_id && row?.refmap_file_name);
     placeBtn?.classList.toggle('hidden', !hasPlace);
     gerberBtn?.classList.toggle('hidden', !hasGerber);
     refmapBtn?.classList.toggle('hidden', !hasRefmap);
+    placeExportBtn?.classList.toggle('hidden', !hasPlace);
+    gerberExportBtn?.classList.toggle('hidden', !hasGerber);
+  }
+
+  async function downloadEngAssetExport(url, fallbackName, okToast) {
+    const res = await fetch(url, { headers: window.EMS.authHeaders() });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(formatApiDetail(data.detail, res.statusText));
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const utfMatch = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    const asciiMatch = cd.match(/filename=\"([^\"]+)\"/i);
+    const filename = utfMatch
+      ? decodeURIComponent(utfMatch[1])
+      : (asciiMatch ? asciiMatch[1] : fallbackName);
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(objectUrl);
+    window.EMS.showToast(okToast || '已导出');
+  }
+
+  async function exportPlacement() {
+    const id = assetsSelectedRow?.placement_file_id;
+    if (!id) {
+      window.EMS.showToast('请先选择已导入坐标的订单', 'error');
+      return;
+    }
+    try {
+      await downloadEngAssetExport(
+        `${API}/placements/${id}/export`,
+        'placement.csv',
+        '坐标已导出'
+      );
+    } catch (e) {
+      window.EMS.showToast(e.message || '导出失败', 'error');
+    }
+  }
+
+  async function exportGerber() {
+    const id = assetsSelectedRow?.gerber_package_id;
+    if (!id) {
+      window.EMS.showToast('请先选择已导入 Gerber 的订单', 'error');
+      return;
+    }
+    try {
+      await downloadEngAssetExport(
+        `${API}/gerbers/${id}/export`,
+        'gerber.zip',
+        'Gerber 已导出'
+      );
+    } catch (e) {
+      window.EMS.showToast(e.message || '导出失败', 'error');
+    }
   }
 
   async function deleteCustomerAsset(kind) {
@@ -1518,7 +1920,8 @@
         placeHint.textContent = row.placement_audit_message || '';
         placeHint.className = `eng-gerber-audit-hint audit-${row.placement_audit_status || 'pending'}`;
       }
-      await loadPlaceLines();
+      // 延迟加载坐标明细，优先让 BOM 明细可交互
+      void loadPlaceLines().catch((err) => console.warn('坐标明细加载失败', err));
     }
 
     const gerberHint = document.getElementById('eng-gerber-audit-hint');
@@ -1528,7 +1931,7 @@
       gerberWrap?.classList.add('hidden');
       gerberEmpty?.classList.remove('hidden');
       if (gerberHint) { gerberHint.textContent = ''; gerberHint.className = 'eng-gerber-audit-hint'; }
-      if (gerberEmpty) gerberEmpty.textContent = '尚未导入 Gerber（可选归档；zip/7z/rar）。不参与工序/面别自动判定。';
+      if (gerberEmpty) gerberEmpty.textContent = '尚未导入 Gerber（必交；zip/7z/rar）。缺 Gerber 不能送审。';
     } else {
       gerberEmpty?.classList.add('hidden');
       gerberWrap?.classList.remove('hidden');
@@ -1536,8 +1939,9 @@
         gerberHint.textContent = row.gerber_audit_message || '';
         gerberHint.className = `eng-gerber-audit-hint audit-${row.gerber_audit_status || 'pending'}`;
       }
-      const files = await engApi(`/gerbers/${row.gerber_package_id}/files`);
-      await renderGerberFilesTable(files, row.gerber_package_id);
+      void engApi(`/gerbers/${row.gerber_package_id}/files`)
+        .then((files) => renderGerberFilesTable(files, row.gerber_package_id))
+        .catch((err) => console.warn('Gerber 列表加载失败', err));
     }
 
     const refmapHint = document.getElementById('eng-refmap-audit-hint');
@@ -1866,7 +2270,7 @@
     const code = getActiveInternalCode() || document.getElementById('eng-filter-code')?.value || '';
     if (!code) {
       const tbody = document.getElementById('eng-models-table');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty">请先选择客户模块</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="empty">请先选择客户模块</td></tr>';
       return [];
     }
     const filterEl = document.getElementById('eng-filter-code');
@@ -1875,31 +2279,46 @@
     const params = new URLSearchParams();
     params.set('internal_code', code);
     if (keyword) params.set('keyword', keyword);
-    const rows = await engApi('/models?' + params.toString());
+    const [rows] = await Promise.all([
+      engApi('/models?' + params.toString()),
+      loadEngStatusBoard({ silent: true }),
+    ]);
     const tbody = document.getElementById('eng-models-table');
     if (!tbody) return [];
+    const counts = engStatusBoard.counts || {};
     const pendingCount = rows.filter(r => resolveBomStatus(r) === 'pending').length;
     const importedCount = rows.length - pendingCount;
+    const closedCount = rows.filter(r => r.is_order_completed).length;
+    const openCount = rows.length - closedCount;
     const meta = document.getElementById('eng-path-info');
     if (meta) {
-      meta.textContent = `${code} 在制 ${rows.length} 笔 · BOM 已确认 ${importedCount} · 待导入 ${pendingCount} · 资料人工导入`;
+      meta.textContent = `${code} 共 ${rows.length} 笔（在制 ${openCount} · 已结案 ${closedCount}） · BOM已确认 ${importedCount} · 待导入 ${counts.pending_import ?? pendingCount} · 待审核 ${counts.pending_review ?? 0}`;
     }
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无在制订单</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty">暂无订单资料</td></tr>';
       return [];
     }
     tbody.innerHTML = rows.map(r => {
       const status = resolveBomStatus(r);
       const rev = effectiveReviewStatus(r);
+      const gap = findImportGapForModel(r);
+      const hasBom = status === 'imported';
+      const hasPlace = gap ? !!gap.has_placement : (hasBom && rev !== 'pending_import');
+      const hasGb = gap ? !!gap.has_gerber : (hasBom && rev !== 'pending_import');
+      const reviewCell = gap
+        ? `<span class="kit-badge ${reviewStatusClass('pending_import')}">工程待导入</span><div>${missingChips(gap.missing_imports)}</div>`
+        : `<span class="kit-badge ${reviewStatusClass(rev)}" title="资料审核状态">${hasBom ? reviewStatusLabel(rev) : '—'}</span>`;
       return `
-      <tr class="eng-model-row${selectedModelKey === modelRowKey(r) ? ' selected' : ''}${status === 'pending' ? ' eng-model-pending' : ' eng-model-imported'}${rev === 'pending_review' ? ' eng-model-pending-review' : ''}" data-key="${modelRowKey(r)}" data-id="${r.id || ''}" data-purchase="${escapeHtml(r.purchase_no || '')}">
+      <tr class="eng-model-row${selectedModelKey === modelRowKey(r) ? ' selected' : ''}${status === 'pending' ? ' eng-model-pending' : ' eng-model-imported'}${rev === 'pending_review' ? ' eng-model-pending-review' : ''}" data-key="${modelRowKey(r)}" data-id="${r.id || ''}" data-purchase="${escapeHtml(r.purchase_no || '')}" data-eng-review="${escapeHtml(rev || '')}">
         <td>${r.internal_code}</td>
         <td>${r.customer_name || r.customer_id}</td>
-        <td><strong>${r.model_code}</strong>${modelFolderSubtitle(r)}${(r.has_substitution || r.substitution_rule_count > 0) ? ` <span class="kit-badge kit-partial" title="已绑定替代料规则 ${r.substitution_rule_count || 0} 条">替×${r.substitution_rule_count || ''}</span>` : ''}</td>
+        <td><strong>${r.model_code}</strong>${modelFolderSubtitle(r)}${r.is_order_completed ? ' <span class="kit-badge kit-unknown" title="订单已结案，工程资料仍保留可查">已结案</span>' : ''}${(r.has_substitution || r.substitution_rule_count > 0) ? ` <span class="kit-badge kit-partial" title="本订单本机型已绑定替代料 ${r.substitution_rule_count || 0} 条">替×${r.substitution_rule_count || ''}</span>` : ''}</td>
         <td><strong>${r.purchase_no || '—'}</strong></td>
         <td>${r.model_name || '—'}</td>
-        <td>${bomStatusBadge(status)}${status === 'imported' ? ` <span class="muted">${r.line_count}</span>` : ''}</td>
-        <td><span class="kit-badge ${reviewStatusClass(rev)}" title="资料审核状态（不是按钮）">${status === 'imported' ? reviewStatusLabel(rev) : '—'}</span></td>
+        <td>${assetMark(hasBom)}${hasBom ? ` <span class="muted">${r.line_count}</span>` : ''}</td>
+        <td>${hasBom ? assetMark(hasPlace) : '<span class="muted">—</span>'}</td>
+        <td>${hasBom ? assetMark(hasGb) : '<span class="muted">—</span>'}</td>
+        <td data-eng-review-cell>${reviewCell}</td>
         <td>${r.order_qty != null ? r.order_qty : '—'}</td>
       </tr>`;
     }).join('');
@@ -1968,14 +2387,18 @@
     bar.classList.remove('hidden');
     const override = meta?.mount_profile_override || '';
     sel.value = override;
+    // 与下拉框保持同步，避免打印时 selectedModel 画像为空误拦
+    if (selectedModel) {
+      selectedModel.mount_profile_override = override;
+    }
     const detected = meta?.detected_profile || 'unknown';
     if (override) {
-      hint.textContent = `当前：手工指定「${PROFILE_LABELS[override] || override}」`;
+      hint.textContent = `当前：已选「${PROFILE_LABELS[override] || override}」（审核/发料前必选）`;
     } else if (detected && detected !== 'unknown') {
       const conf = meta?.profile_confidence ? ` / ${meta.profile_confidence}` : '';
-      hint.textContent = `自动识别：${PROFILE_LABELS[detected] || detected}${conf}`;
+      hint.textContent = `未选定画像（自动参考：${PROFILE_LABELS[detected] || detected}${conf}）— 请先选纯贴片/纯插件/混贴再审核`;
     } else {
-      hint.textContent = '自动识别未得出明确结论，可手工指定或补工艺列';
+      hint.textContent = '未选定画像 — 请先选纯贴片 SMT / 纯插件 DIP / 混贴，否则不能审核通过';
     }
   }
 
@@ -1989,7 +2412,7 @@
 
   function reviewStatusLabel(status) {
     return {
-      pending_import: '待导入',
+      pending_import: '工程待导入',
       pending_review: '待审核',
       approved: '已通过',
       rejected: '已退回',
@@ -2005,12 +2428,36 @@
     }[status] || 'kit-unknown';
   }
 
-  /** BOM 已导入但尚未写入审核流时，按「待审核」处理，避免误显示「待导入」 */
+  /** 工程状态以库为准；未齐套（缺 BOM/坐标/Gerber）保持待导入，不伪装成待审核 */
   function effectiveReviewStatus(model, meta) {
     const raw = (meta?.eng_review_status || model?.eng_review_status || '').trim();
-    const bomOk = resolveBomStatus(model) === 'imported' || Number(model?.line_count || 0) > 0;
-    if (bomOk && (!raw || raw === 'pending_import')) return 'pending_review';
-    return raw;
+    return raw || 'pending_import';
+  }
+
+  /** 详情状态变更后同步左侧列表「审核」列，避免仍显示旧的「已通过」 */
+  function syncListReviewBadge(model, status) {
+    if (!model) return;
+    const st = (status || effectiveReviewStatus(model) || '').trim();
+    if (st) model.eng_review_status = st;
+    const key = modelRowKey(model);
+    const tr = document.querySelector(`.eng-model-row[data-key="${CSS.escape(key)}"]`);
+    if (!tr) return;
+    tr.classList.toggle('eng-model-pending-review', st === 'pending_review');
+    const cell = tr.querySelector('[data-eng-review-cell]');
+    if (!cell) return;
+    const hasBom = resolveBomStatus(model) === 'imported' || !!(model.id || model.bom_model_id);
+    if (!hasBom) {
+      cell.innerHTML = '<span class="muted">—</span>';
+      return;
+    }
+    if (st === 'pending_import') {
+      const gap = findImportGapForModel(model);
+      cell.innerHTML = gap
+        ? `<span class="kit-badge ${reviewStatusClass('pending_import')}">工程待导入</span><div>${missingChips(gap.missing_imports)}</div>`
+        : `<span class="kit-badge ${reviewStatusClass(st)}" title="资料审核状态">${reviewStatusLabel(st)}</span>`;
+      return;
+    }
+    cell.innerHTML = `<span class="kit-badge ${reviewStatusClass(st)}" title="资料审核状态">${reviewStatusLabel(st)}</span>`;
   }
 
   function mountReasonCell(line) {
@@ -2031,13 +2478,17 @@
     if (!tbody) return;
     const active = (lines || []).filter((l) => l.is_active !== false);
     if (!active.length) {
-      tbody.innerHTML = '<tr><td colspan="11" class="empty">无明细行</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" class="empty">无明细行</td></tr>';
       return;
     }
     tbody.innerHTML = active.map(l => {
       const ctrlMark = (l.source === 'control' || l.control_id)
         ? ' <span class="kit-badge kit-partial" title="管制变更料">变更</span>'
         : '';
+      const subs = (l.substitute_codes || []).filter(Boolean);
+      const subCell = subs.length
+        ? `<span class="eng-bom-sub-codes" title="${escapeHtml(subs.join('、'))}">${escapeHtml(subs.join('、'))}</span>`
+        : '<span class="muted">—</span>';
       return `
       <tr data-line-id="${l.id}" class="${l.source === 'control' ? 'eng-line-control' : ''}" title="${mountSourceHint(l.mount_source)}">
         <td>${l.seq || '—'}</td>
@@ -2051,6 +2502,7 @@
         <td>${l.unit}</td>
         <td class="eng-kit-pos">${escapeHtml(l.position || '—')}</td>
         <td>${isImportOnly() || isAuditOnly() ? (l.process || '—') : processSelect(l.process)}</td>
+        <td class="eng-bom-col-sub">${subCell}</td>
       </tr>`;
     }).join('');
     if (!isImportOnly() && !isAuditOnly()) {
@@ -2075,6 +2527,7 @@
       selectedModel.eng_review_status = meta.eng_review_status;
     }
     const status = effectiveReviewStatus(selectedModel, meta);
+    if (selectedModel) syncListReviewBadge(selectedModel, status);
     if (badge) {
       badge.textContent = reviewStatusLabel(status);
       badge.className = `kit-badge ${reviewStatusClass(status)}`;
@@ -2098,9 +2551,41 @@
   function applyApproveGate(dossier) {
     const blockers = dossierBlockingItems(dossier);
     const blocked = blockers.length > 0;
-    const tip = blocked
-      ? `齐套未完成，暂不可通过：${blockers.map((c) => c.label).join('、')}`
-      : '资料齐套已满足，可审核通过';
+    const profile = (dossier?.mount_profile_override || dossier?.checklist_policy?.mount_profile_override || '').trim();
+    const profileLabel = PROFILE_LABELS[profile] || profile || '未选';
+    let tip = blocked
+      ? `审核条件未满足，暂不可通过：${blockers.map((c) => c.label).join('、')}`
+      : '资料检查已满足，可审核通过';
+    const reviewSt = (dossier?.eng_review_status || '').trim();
+    if (reviewSt === 'approved') {
+      ['btn-eng-kit-approve', 'btn-eng-review-approve'].forEach((id) => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.disabled = true;
+        btn.title = '本单已审核通过';
+        btn.classList.add('eng-approve-blocked');
+      });
+      const gate = document.getElementById('eng-kit-approve-gate');
+      if (gate) {
+        gate.classList.remove('hidden');
+        gate.textContent = '本单已审核通过，请阅读下方绿色提示后点「关闭」';
+      }
+      return;
+    }
+    if (reviewSt === 'pending_import') {
+      tip = blocked
+        ? `当前待导入，请先完成 BOM/坐标/Gerber 导入；与仓库备料齐套无关。未满足：${blockers.map((c) => c.label).join('、')}`
+        : '导入完成后送审，再由审核员核对通过';
+    }
+    if (blocked && blockers.some((c) => c.label === '贴片坐标')) {
+      if (profile === 'dip_only') {
+        tip = '贴片坐标未导入，但已选「纯插件」应免坐标；请关闭后刷新再试，或联系管理员';
+      } else if (profile === 'mixed' || profile === 'smt_only') {
+        tip = `当前贴装画像为「${profileLabel}」，必须导入贴片坐标才能通过；若本单实际是纯插件，请先在外层改选「纯插件 DIP」再审核`;
+      } else {
+        tip = `${tip}（请先选定贴装画像；纯插件可免坐标，混贴/纯贴片必须有坐标）`;
+      }
+    }
     ['btn-eng-kit-approve', 'btn-eng-review-approve'].forEach((id) => {
       const btn = document.getElementById(id);
       if (!btn) return;
@@ -2129,6 +2614,76 @@
     kitReject?.classList.toggle('hidden', !(allow && pending && selectedModelId));
   }
 
+  function formatImportBomCheckSummary(imp) {
+    if (!imp) return '';
+    if (!imp.has_snapshot) {
+      return '【导入 vs 生效 BOM】尚无 Excel 导入快照，请重新导入 BOM 后再审核（当前无法比对漏料）';
+    }
+    const miss = imp.missing_in_bom || [];
+    const extra = imp.extra_in_bom || [];
+    if (!miss.length && !extra.length) {
+      return `【导入 vs 生效 BOM】一致，共 ${imp.import_count || 0} 个料号（无漏料、无多余）`;
+    }
+    let parts = [
+      `导入 ${imp.import_count || 0} 个料号，生效 BOM ${imp.active_count || 0} 个`,
+    ];
+    if (miss.length) {
+      parts.push(`缺 ${miss.length} 个：${miss.slice(0, 12).join('、')}${miss.length > 12 ? '…' : ''}`);
+    }
+    if (extra.length) {
+      parts.push(`多 ${extra.length} 个非导入料`);
+    }
+    return `【导入 vs 生效 BOM】${parts.join('；')}`;
+  }
+
+  function renderImportBomCheckPanel(imp) {
+    if (!imp) return '';
+    const miss = imp.missing_in_bom || [];
+    const extra = imp.extra_in_bom || [];
+    const ok = imp.has_snapshot && imp.ready && !miss.length;
+    const warnNoSnap = !imp.has_snapshot;
+    const cls = ok ? 'eng-import-check-ok' : (warnNoSnap ? 'eng-import-check-warn' : 'eng-dossier-reject');
+    const title = ok
+      ? `导入 BOM 比对：通过（${imp.import_count || 0} 个料号与生效明细一致）`
+      : warnNoSnap
+        ? '导入 BOM 比对：未建立 Excel 快照'
+        : `导入 BOM 漏料（生效明细缺 ${miss.length} 个）`;
+    const body = ok
+      ? escapeHtml(imp.detail || '与最后一次导入 Excel 料号一致')
+      : warnNoSnap
+        ? escapeHtml(imp.detail || '请重新导入 BOM Excel，系统会在导入时自动建立料号快照')
+        : `${escapeHtml(miss.slice(0, 40).join('、'))}${miss.length > 40 ? '…' : ''}`;
+    const extraLine = extra.length
+      ? `<div class="muted" style="font-size:12px;margin-top:6px">生效 BOM 另有 ${extra.length} 个料号不在导入 Excel 中</div>`
+      : '';
+    const src = imp.source_file
+      ? `<div class="muted" style="font-size:11px;margin-top:6px">快照来源：${escapeHtml(imp.source_file)}</div>`
+      : '';
+    return `<div class="${cls}" role="alert" style="margin-top:10px">
+      <div class="eng-dossier-reject-title">${escapeHtml(title)}</div>
+      <div class="eng-dossier-reject-body">${body}</div>
+      ${extraLine}
+      ${src}
+      ${!ok && !warnNoSnap ? '<div class="muted" style="font-size:12px;margin-top:6px">漏料不可审核通过，请核对 Excel 或重新导入</div>' : ''}
+    </div>`;
+  }
+
+  function showEngApproveResult(title, detail) {
+    const box = document.getElementById('eng-kit-approve-result');
+    if (!box) return;
+    box.innerHTML = `<div class="eng-kit-approve-result-title">${escapeHtml(title)}</div><div>${escapeHtml(detail || '')}</div>`;
+    box.classList.remove('hidden');
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function hideEngApproveResult() {
+    const box = document.getElementById('eng-kit-approve-result');
+    if (box) {
+      box.classList.add('hidden');
+      box.innerHTML = '';
+    }
+  }
+
   function renderReviewDossier(dossier) {
     const box = document.getElementById('eng-kit-dossier');
     const badge = document.getElementById('eng-kit-status-badge');
@@ -2139,6 +2694,7 @@
       box.classList.add('hidden');
       if (badge) badge.textContent = '';
       if (title) title.textContent = 'BOM 资料审核';
+      hideEngApproveResult();
       applyApproveGate(null);
       return;
     }
@@ -2166,11 +2722,6 @@
         <span>${escapeHtml(s.title)}</span>
       </div>
     `).join('<span class="eng-flow-sep">→</span>');
-    const rules = dossier.customer_rules || {};
-    const scope = (rules.assets_scope || activeEngCustomer?.rules?.assets_scope || 'model') === 'order'
-      ? '资料按订单隔离'
-      : '资料按机型共用';
-    const allowNoMount = !!(rules.workflow && rules.workflow.allow_approve_without_mount);
     const stats = dossier.mount_stats || {};
     const reviewMeta = (dossier.eng_reviewed_by || dossier.eng_reviewed_at)
       ? `<div><span class="k">最近审核</span><span>${escapeHtml(dossier.eng_reviewed_by || '—')} · ${formatReviewTodoTime(dossier.eng_reviewed_at)}</span></div>`
@@ -2192,12 +2743,12 @@
           <div><span class="k">提交人</span><span>${escapeHtml(dossier.eng_submitter || '—')}</span></div>
           <div><span class="k">送审时间</span><span>${formatReviewTodoTime(dossier.eng_submitted_at)}</span></div>
           ${reviewMeta}
-          <div><span class="k">客户规则</span><span>${escapeHtml(scope)}${allowNoMount ? ' · 允许贴装未全识别通过' : ''}</span></div>
           <div><span class="k">贴装统计</span><span>SMT ${stats.smt || 0} · DIP ${stats.dip || 0} · 装配 ${stats.assy || 0} · 待确认 ${stats.unresolved || 0}</span></div>
           ${st !== 'rejected' ? `<div class="eng-dossier-span"><span class="k">资料摘要</span><span>${escapeHtml(dossier.eng_review_message || '—')}</span></div>` : ''}
         </div>
       </div>
       <div class="eng-dossier-flow">${steps}</div>
+      ${renderImportBomCheckPanel(dossier.import_bom_check)}
       <div class="eng-dossier-checks">${checks}</div>
     `;
     applyApproveGate(dossier);
@@ -2232,31 +2783,36 @@
     const dossier = lastReviewDossier || await loadReviewDossier(selectedModelId);
     const blockers = dossierBlockingItems(dossier);
     if (blockers.length) {
-      window.EMS.showToast(`齐套未完成：${blockers.map((c) => c.label).join('、')}`, 'error', 6000);
+      window.EMS.showToast(`审核条件未满足：${blockers.map((c) => c.label).join('、')}`, 'error', 6000);
       applyApproveGate(dossier);
       return;
     }
-    if (!window.confirm('确认审核通过本订单资料？通过后可用于发料打印。')) return;
+    const impSummary = formatImportBomCheckSummary(dossier.import_bom_check);
+    const imp = dossier.import_bom_check;
+    if (imp?.has_snapshot && (imp.missing_in_bom || []).length) {
+      window.EMS.showToast('导入 BOM 存在漏料，不可审核通过', 'error', 6000);
+      applyApproveGate(dossier);
+      return;
+    }
+    const confirmLines = [
+      '确认审核通过本订单资料？通过后可用于发料打印。',
+      impSummary,
+    ].filter(Boolean);
+    if (!window.confirm(confirmLines.join('\n\n'))) return;
     await engApi(`/models/${selectedModelId}/review/approve`, {
       method: 'POST',
       body: JSON.stringify({ message: '审核通过' }),
     });
-    window.EMS.showToast('已审核通过，资料信息已更新');
-    document.getElementById('eng-kit-modal')?.classList.add('hidden');
-    renderReviewDossier(null);
+    const detail = impSummary || '资料已审核通过，可用于发料打印。';
+    showEngApproveResult('审核已通过', `${detail}\n\n请阅读后点击右上角「关闭」退出审核工作台。`);
+    window.EMS.showToast('审核已通过，完整比对见审核工作台绿色提示框', 'success', 20000);
     await loadModels();
     await loadReviewInbox({ silent: true });
-    const next = (reviewTodoItems || []).find((it) => {
-      const kind = it.todo_type || reviewTodoMeta.todo_kind;
-      return kind === 'review' || (!kind && reviewTodoMeta.todo_kind !== 'import');
-    });
-    if (next && canEngAudit()) {
-      if (window.confirm('还有待审核事项，是否继续处理下一条？')) {
-        await openReviewTodoItem(next);
-        return;
-      }
+    await loadReviewDossier(selectedModelId);
+    if (selectedModel) {
+      selectedModel.eng_review_status = 'approved';
+      await selectModel(selectedModel);
     }
-    if (selectedModel) await selectModel(selectedModel);
   }
 
   function defaultRejectReason() {
@@ -2315,14 +2871,99 @@
     }
     const status = effectiveReviewStatus(selectedModel);
     if (status !== 'approved') {
-      window.EMS.showToast('资料未审核，请联系管理员审核', 'error');
+      const tip = status === 'pending_review'
+        ? '本单资料状态为「待审核」（例如改过贴装画像后需重新审核通过），请先点「审核通过」后再打印'
+        : '资料未审核通过，请先完成审核后再打印';
+      window.EMS.showToast(tip, 'error', 7000);
       return;
     }
     if (!selectedModelId) {
       window.EMS.showToast('请先导入并审核本订单 BOM', 'error');
       return;
     }
+    // 画像以库/下拉为准，避免列表缓存空值误报「请先选择贴装画像」
+    let profile = String(
+      selectedModel.mount_profile_override
+      || document.getElementById('eng-mount-profile')?.value
+      || '',
+    ).trim();
+    try {
+      const dossier = await engApi(`/models/${selectedModelId}/review-dossier`);
+      const dossierProfile = String(dossier?.mount_profile_override || '').trim();
+      if (dossierProfile) {
+        profile = dossierProfile;
+        selectedModel.mount_profile_override = dossierProfile;
+        const sel = document.getElementById('eng-mount-profile');
+        if (sel) sel.value = dossierProfile;
+      }
+      if (!['dip_only', 'smt_only', 'mixed'].includes(profile)) {
+        window.EMS.showToast('请先选择贴装画像（纯贴片 SMT / 纯插件 DIP / 混贴）并审核通过后再打印', 'error', 6000);
+        return;
+      }
+      // 已审核通过：优先用后端 print_blockers（与 dip_only 免坐标一致）；旧版无该字段时回退
+      const printBlockers = Array.isArray(dossier?.print_blockers)
+        ? dossier.print_blockers
+        : (dossier?.approve_blockers || []).filter((b) => {
+            if (profile === 'dip_only' && String(b).includes('坐标')) return false;
+            return true;
+          });
+      if (printBlockers.length) {
+        window.EMS.showToast(`不能打印发料单：${printBlockers.join('；')}`, 'error', 8000);
+        return;
+      }
+      if (!Array.isArray(dossier?.print_blockers)) {
+        const missProc = Number(dossier?.mount_stats?.unresolved || 0);
+        const missSide = Number(dossier?.mount_stats?.missing_side || 0);
+        if (missProc > 0 || missSide > 0) {
+          window.EMS.showToast(
+            `不能打印发料单：仍有物料缺工序(${missProc})或面别(${missSide})`,
+            'error',
+            8000,
+          );
+          return;
+        }
+      }
+    } catch (e) {
+      window.EMS.showToast(e.message || '校验发料条件失败', 'error');
+      return;
+    }
     document.getElementById('eng-issue-print-modal')?.classList.remove('hidden');
+  }
+
+  async function showIssuePrintHistory() {
+    if (!selectedModelId) {
+      window.EMS.showToast('请先选择订单机型', 'error');
+      return;
+    }
+    const modal = document.getElementById('eng-print-history-modal');
+    const body = document.getElementById('eng-print-history-body');
+    if (!modal || !body) return;
+    modal.classList.remove('hidden');
+    body.innerHTML = '<p class="empty">加载中…</p>';
+    try {
+      const rows = await engApi(`/models/${selectedModelId}/issue-print-logs?limit=40`);
+      if (!rows.length) {
+        body.innerHTML = '<p class="empty">暂无打印记录。自本次升级后，每次确认打印将自动留痕料号清单。</p>';
+        return;
+      }
+      body.innerHTML = `<table class="data-table eng-print-history-table"><thead><tr>
+        <th>打印时间</th><th>工序</th><th>操作人</th><th>订单量</th><th>行数</th><th>钢网/波峰</th><th>料号清单</th>
+      </tr></thead><tbody>${rows.map((r) => {
+        const codes = (r.material_codes || []).join('、');
+        const tool = `${r.stencil_src || '—'}/${r.wave_src || '—'}`;
+        return `<tr>
+          <td>${formatReviewTodoTime(r.created_at)}</td>
+          <td><strong>${escapeHtml(r.process_filter || '')}</strong></td>
+          <td>${escapeHtml(r.operator || '—')}</td>
+          <td>${r.order_qty != null ? r.order_qty : '—'}</td>
+          <td>${r.material_count || 0}</td>
+          <td class="muted">${escapeHtml(tool)}</td>
+          <td class="cell-wrap muted" style="font-size:11px;max-width:420px">${escapeHtml(codes)}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+    } catch (e) {
+      body.innerHTML = `<p class="empty">${escapeHtml(e.message || '加载失败')}</p>`;
+    }
   }
 
   function toolingSourceLabel(stencilSrc, waveSrc) {
@@ -2399,8 +3040,6 @@
       const factory = selectedModel.internal_code || '';
       const toolLabel = toolingSourceLabel(stencilSrc, waveSrc);
       const processLabel = processFilter === 'ALL' ? inferProcessLabel(lines) : processFilter;
-      const mountTypeOrder = { SMT: 1, DIP: 2, ASSY: 3, 'N/A': 4 };
-      const mountSideOrder = { TOP: 1, BOT: 2, 'TOP+BOT': 3 };
       const printMountType = (t) => {
         const u = String(t || '').toUpperCase();
         if (u === 'SMT') return 'SMT';
@@ -2424,43 +3063,164 @@
         if (ca !== '' && cb !== '' && Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
         return ca.localeCompare(cb, 'zh-CN', { numeric: true, sensitivity: 'base' });
       };
-      // 先按贴装类型、面别分组，再按元件品号升序，方便按工序/面发料
-      const sortedLines = [...lines].sort((a, b) => {
-        const ta = mountTypeOrder[String(a.mount_type || '').toUpperCase()] || 9;
-        const tb = mountTypeOrder[String(b.mount_type || '').toUpperCase()] || 9;
-        if (ta !== tb) return ta - tb;
-        const sa = mountSideOrder[String(a.mount_side || '').toUpperCase()] || 9;
-        const sb = mountSideOrder[String(b.mount_side || '').toUpperCase()] || 9;
-        if (sa !== sb) return sa - sb;
-        return cmpCode(a.material_code, b.material_code);
-      });
-      // 永联：按机型拉取替代规则，发料单标注投产料号 + 分板用量
+      // 整张发料单只按料号（元件品号）升序，方便按料号拣料
+      const sortedLines = [...lines].sort((a, b) =>
+        cmpCode(a.material_code, b.material_code)
+      );
+      // 与 BOM 明细预览同源：优先用 lines 上已算好的 substitute_details / substitute_codes
       const subByComp = {};
-      const isYonglian = (selectedModel.customer_id || '') === 'yonglian'
-        || (selectedModel.internal_code || '') === 'A067';
-      if (isYonglian && selectedModel.model_code) {
+      sortedLines.forEach((l) => {
+        const key = String(l.material_code || '').trim().toUpperCase();
+        if (!key) return;
+        const details = Array.isArray(l.substitute_details) ? l.substitute_details : [];
+        if (details.length) {
+          const d0 = details[0] || {};
+          const alt = String(d0.material_code || '').trim();
+          if (!alt) return;
+          subByComp[key] = {
+            alt_code: alt,
+            alt_name: String(d0.material_name || '').trim(),
+            alt_spec: String(d0.spec || '').trim(),
+            _score: 10,
+          };
+          return;
+        }
+        const alts = (l.substitute_codes || []).map((c) => String(c || '').trim()).filter(Boolean);
+        if (!alts.length) return;
+        subByComp[key] = { alt_code: alts[0], sub_code: alts[0], alt_name: '', alt_spec: '', _score: 10 };
+      });
+      // 可选：用已确认规则补规格（永联另可补分板用量 qty）
+      const cid = String(selectedModel.customer_id || '').trim();
+      const isYonglian = cid === 'yonglian' || String(selectedModel.internal_code || '').trim() === 'A067';
+      const modelCode = String(selectedModel.model_code || '').trim();
+      const orderPo = String(selectedModel.purchase_no || '').trim();
+      if (cid) {
         try {
-          const rules = await engApi(
-            '/substitutions?' + new URLSearchParams({
-              customer_id: selectedModel.customer_id || 'yonglian',
-              parent_code: selectedModel.model_code,
-              page: '1',
-              page_size: '500',
-            }).toString()
-          );
-          (rules || []).forEach((r) => {
-            const key = String(r.comp_code || '').trim().toUpperCase();
-            if (!key) return;
-            if (!subByComp[key]) subByComp[key] = r;
+          const params = new URLSearchParams({
+            customer_id: cid,
+            page: '1',
+            page_size: '500',
           });
-        } catch (_) { /* 无替代规则时仍打印 BOM */ }
+          if (modelCode) params.set('parent_code', modelCode);
+          if (orderPo) params.set('keyword', orderPo);
+          const rules = await engApi('/substitutions?' + params.toString());
+          (rules || []).forEach((r) => {
+            if (String(r.confirm_status || 'confirmed') === 'pending') return;
+            const rPo = String(r.purchase_no || '').trim();
+            if (rPo && orderPo && rPo !== orderPo) return;
+            const pairs = [
+              {
+                bom: String(r.comp_code || '').trim().toUpperCase(),
+                alt: String(r.sub_code || '').trim(),
+                name: String(r.sub_name || '').trim(),
+                spec: String(r.sub_spec || '').trim(),
+              },
+              {
+                bom: String(r.sub_code || '').trim().toUpperCase(),
+                alt: String(r.comp_code || '').trim(),
+                name: String(r.comp_name || '').trim(),
+                spec: String(r.comp_spec || '').trim(),
+              },
+            ];
+            pairs.forEach((p) => {
+              if (!p.bom || !p.alt) return;
+              const hit = subByComp[p.bom];
+              if (!hit) return;
+              // 菲力斯等客户规则 qty=整单总需求，不能当单台用量；仅永联用 qty 覆盖 BOM
+              if (isYonglian && r.qty != null && r.qty !== '' && hit.qty == null) hit.qty = r.qty;
+              if (!hit.alt_spec && p.spec) hit.alt_spec = p.spec;
+              if (!hit.alt_name && p.name) hit.alt_name = p.name;
+            });
+          });
+        } catch (_) { /* 补全失败仍按 BOM 打印 */ }
       }
       const hasSubMarks = Object.keys(subByComp).length > 0;
       const hasControlMarks = sortedLines.some((l) => l.source === 'control' || l.control_id);
+      // 表头管制单号：按本订单+机型取已生效管制（失败不影响打印）
+      let controlNosLabel = '—';
+      try {
+        const pn = String(selectedModel.purchase_no || '').trim();
+        const mc = String(selectedModel.model_code || '').trim();
+        if (pn) {
+          const qs = new URLSearchParams();
+          if (mc) qs.set('model_code', mc);
+          const res = await fetch(
+            `/api/material-controls/by-purchase/${encodeURIComponent(pn)}${qs.toString() ? `?${qs}` : ''}`,
+            { headers: { ...window.EMS.authHeaders() } }
+          );
+          if (res.ok) {
+            const rows = await res.json();
+            const nos = [];
+            const seen = new Set();
+            for (const r of rows || []) {
+              if (String(r.status || '') !== 'active') continue;
+              const no = String(r.control_no || '').trim();
+              if (!no || seen.has(no)) continue;
+              seen.add(no);
+              nos.push(no);
+            }
+            // 若 BOM 行带 control_id 但 by-purchase 未命中 active，补一行号展示
+            if (!nos.length) {
+              const ids = [...new Set(
+                sortedLines.map((l) => l.control_id).filter((id) => id != null && id !== '')
+              )];
+              for (const cid of ids.slice(0, 8)) {
+                try {
+                  const cr = await fetch(`/api/material-controls/${cid}`, {
+                    headers: { ...window.EMS.authHeaders() },
+                  });
+                  if (!cr.ok) continue;
+                  const doc = await cr.json();
+                  const no = String(doc.control_no || '').trim();
+                  if (no && !seen.has(no)) {
+                    seen.add(no);
+                    nos.push(no);
+                  }
+                } catch (_) { /* ignore */ }
+              }
+            }
+            if (nos.length) controlNosLabel = nos.join('、');
+          }
+        }
+      } catch (_) { /* 管制查询失败仍打印发料单 */ }
+      const printMaterials = sortedLines.map((l) => {
+        const codeKey = String(l.material_code || '').trim().toUpperCase();
+        const rule = subByComp[codeKey];
+        const per = isYonglian && rule && rule.qty != null && rule.qty !== ''
+          ? Number(rule.qty)
+          : Number(l.qty_per ?? 0);
+        const need = Math.round(per * orderQty * 10000) / 10000;
+        return {
+          material_code: l.material_code || '',
+          material_name: l.material_name || '',
+          spec: l.spec || '',
+          unit: l.unit || 'PCS',
+          qty_per: per,
+          issue_qty: need,
+          mount_type: l.mount_type || lineMountKind(l) || '',
+          mount_side: l.mount_side || '',
+          position: l.position || '',
+        };
+      });
+      try {
+        await engApi(`/models/${selectedModelId}/issue-print-log`, {
+          method: 'POST',
+          body: JSON.stringify({
+            process_filter: processFilter,
+            stencil_src: stencilSrc,
+            wave_src: waveSrc,
+            order_qty: orderQty,
+            line_key: selectedModel.line_key || '',
+            materials: printMaterials,
+          }),
+        });
+      } catch (logErr) {
+        console.warn('发料打印留痕失败', logErr);
+      }
       const rowsHtml = sortedLines.map((l, idx) => {
         const codeKey = String(l.material_code || '').trim().toUpperCase();
         const rule = subByComp[codeKey];
-        const per = rule && rule.qty != null && rule.qty !== ''
+        const per = isYonglian && rule && rule.qty != null && rule.qty !== ''
           ? Number(rule.qty)
           : Number(l.qty_per ?? 0);
         const need = Math.round(per * orderQty * 10000) / 10000;
@@ -2468,8 +3228,13 @@
         const codeCell = isCtrl
           ? `<span style="color:#c00;font-weight:700">${escapeHtml(l.material_code || '')}</span><div style="color:#c00;font-size:10px">变更</div>`
           : escapeHtml(l.material_code || '');
-        const subCell = rule
-          ? `<span style="color:#c00;font-weight:700">${escapeHtml(rule.sub_code || '')}</span>`
+        const subCode = rule ? String(rule.alt_code || rule.sub_code || '').trim() : '';
+        const subSpec = rule ? String(rule.alt_spec || '').trim() : '';
+        // 用 br+span，避免 table 内嵌套 div 在部分打印机预览有、出纸无
+        const subCell = subCode
+          ? `<span class="eng-print-sub">${escapeHtml(subCode)}</span>${
+              subSpec ? `<br><span class="eng-print-sub-spec">${escapeHtml(subSpec)}</span>` : ''
+            }`
           : '';
         const nameText = l.material_name || (l.spec || '').split(' / ')[0] || '';
         return `<tr>
@@ -2477,37 +3242,45 @@
           <td>${escapeHtml(printMountType(l.mount_type))}</td>
           <td>${escapeHtml(printMountSide(l.mount_side))}</td>
           <td>${codeCell}</td>
-          <td>${subCell}</td>
+          <td class="eng-print-sub-cell">${subCell}</td>
           <td>${escapeHtml(nameText)}</td>
           <td class="cell-wrap">${escapeHtml(l.spec || '')}</td>
           <td>${escapeHtml(l.unit || 'PCS')}</td>
           <td>${per}</td>
           <td class="eng-kit-pos">${escapeHtml(l.position || '')}</td>
           <td>${need}</td>
-          <td></td>
-          <td></td>
+          <td class="eng-print-note"></td>
+          <td class="eng-print-note"></td>
         </tr>`;
       }).join('');
       const hints = [];
       if (hasControlMarks) hints.push('本单含管制变更料（红色「变更」），已按生效 BOM 发料');
-      if (hasSubMarks) hints.push('本单含替代料，请按「投产料号」备料（元件品号为 BOM 子项）');
+      if (hasSubMarks) hints.push('本单含替代料，请按「投产/替代」栏备料（含替代规格）');
       const subHint = hints.length
-        ? `<div class="head" style="color:#c00;font-size:13px;margin-top:-4px">${hints.join('；')}</div>`
+        ? `<div class="head" style="color:#c00;font-size:12px;margin-top:-4px">${hints.join('；')}</div>`
         : '';
       const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>发料单 ${escapeHtml(processLabel)} ${escapeHtml(selectedModel.purchase_no || '')}</title>
 <style>
   *{box-sizing:border-box}
-  body{font-family:"SimSun","Songti SC","PingFang SC","Microsoft YaHei",serif;color:#111;margin:8px;font-size:12px}
-  .head{margin:0 0 10px;line-height:1.8;font-size:16px;font-weight:700;text-align:center;word-spacing:2px}
+  body{font-family:"SimSun","Songti SC","PingFang SC","Microsoft YaHei",serif;color:#111;margin:6px;font-size:11px}
+  .head{margin:0 0 8px;line-height:1.7;font-size:15px;font-weight:700;text-align:center;word-spacing:2px}
   .tool{color:#c00;font-weight:700;margin:0 6px}
   table{width:100%;border-collapse:collapse;table-layout:fixed}
-  th,td{border:1px solid #333;padding:3px 4px;text-align:center;vertical-align:middle;word-break:break-all}
-  th{background:#d9d9d9;font-weight:700}
-  td:nth-child(6),td:nth-child(7),td:nth-child(10){text-align:left;white-space:normal;line-height:1.35}
-  .eng-kit-pos{white-space:normal;word-break:break-all;line-height:1.35;font-size:11px}
+  th,td{border:1px solid #333;padding:2px 3px;text-align:center;vertical-align:top;word-break:break-all;overflow:visible}
+  th{background:#d9d9d9;font-weight:700;vertical-align:middle}
+  td:nth-child(6),td:nth-child(7),td:nth-child(10),td.eng-print-sub-cell{text-align:left;white-space:normal;line-height:1.35}
+  td.eng-print-sub-cell{overflow:visible;min-height:1.6em}
+  .eng-kit-pos{white-space:normal;word-break:break-all;line-height:1.3;font-size:10px}
+  .eng-print-sub{color:#b00000;font-weight:700}
+  .eng-print-sub-spec{display:inline;color:#111;font-size:10px;font-weight:600;line-height:1.3}
+  .eng-print-note{min-height:22px}
   @media print{
-    body{margin:4mm}
+    body{margin:4mm;font-size:10.5px}
     .no-print{display:none!important}
+    /* 出纸强制深色：避免红字/小字被打印机省墨吞掉（预览有、纸上无） */
+    .eng-print-sub{color:#000!important;font-weight:700!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .eng-print-sub-spec{color:#000!important;font-size:10px!important;font-weight:600!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    td.eng-print-sub-cell{overflow:visible!important}
     @page{size:A4 landscape;margin:4mm}
   }
 </style></head><body>
@@ -2517,25 +3290,26 @@
     &nbsp;&nbsp;订单${orderQty}PCS
     <span class="tool">${escapeHtml(toolLabel)}</span>
     订单号：${escapeHtml(selectedModel.purchase_no || '—')}
+    &nbsp;&nbsp;管制单号：${escapeHtml(controlNosLabel)}
     &nbsp;&nbsp;${escapeHtml(processLabel)}
   </div>
   ${subHint}
   <table>
     <thead>
       <tr>
-        <th style="width:3%">序号</th>
-        <th style="width:4%">贴装</th>
-        <th style="width:4%">面别</th>
-        <th style="width:9%">元件品号</th>
-        <th style="width:9%">投产/替代</th>
-        <th style="width:8%">元件品名</th>
-        <th style="width:16%">元件规格</th>
-        <th style="width:3%">单位</th>
-        <th style="width:4%">用量</th>
-        <th style="width:14%">插件位置</th>
-        <th style="width:5%">需求</th>
-        <th style="width:10%">发料数</th>
-        <th style="width:7%">退料数</th>
+        <th style="width:2.5%">序号</th>
+        <th style="width:3.5%">贴装</th>
+        <th style="width:3.5%">面别</th>
+        <th style="width:8%">元件品号</th>
+        <th style="width:16%">投产/替代</th>
+        <th style="width:6%">元件品名</th>
+        <th style="width:11%">元件规格</th>
+        <th style="width:2.5%">单位</th>
+        <th style="width:3.5%">用量</th>
+        <th style="width:9%">插件位置</th>
+        <th style="width:4%">需求</th>
+        <th style="width:14%">发料数</th>
+        <th style="width:12%">退料数</th>
       </tr>
     </thead>
     <tbody>${rowsHtml}</tbody>
@@ -2598,11 +3372,16 @@
         selectedModel.mount_profile_override = sel?.value || '';
       }
       updateReviewBar({ eng_review_status: 'pending_review' });
-      const profileLabel = PROFILE_LABELS[sel?.value] || (sel?.value ? sel.value : '自动识别');
+      syncListReviewBadge(selectedModel, 'pending_review');
+      const profileLabel = PROFILE_LABELS[sel?.value] || (sel?.value ? sel.value : '未选择');
       window.EMS.showToast(
-        sel?.value === 'dip_only'
-          ? `贴装画像已设为「${profileLabel}」，纯插件免贴片坐标；请重新打开审核工作台后再通过`
-          : `贴装画像已保存（${profileLabel}），请点「审核通过」更新资料`,
+        !sel?.value
+          ? '已清空贴装画像；未选纯贴片/纯插件/混贴前不能审核通过，也不能打印发料单'
+          : sel?.value === 'dip_only'
+          ? `贴装画像已设为「${profileLabel}」，纯插件免贴片坐标；已进入待审核，请点「审核通过」或打开「BOM 资料审核」后通过`
+          : `贴装画像已保存（${profileLabel}）；状态已改回待审核，请点「审核通过」`,
+        'warning',
+        6000,
       );
       await reloadModelLines();
       // 审核弹窗若已打开，立即刷新齐套门禁
@@ -2638,7 +3417,7 @@
         tbody.innerHTML = `<tr><td colspan="11" class="empty">订单 ${escapeHtml(model.purchase_no || '')} 尚未确认 BOM，请点击页头「导入 BOM」上传本订单专用 Excel</td></tr>`;
       }
       clearMountReadinessPanel();
-      await syncAssetsForSelectedModel();
+      void syncAssetsForSelectedModel().catch(() => {});
       return;
     }
     kitBar?.classList.remove('hidden');
@@ -2648,14 +3427,15 @@
       if (payload.eng_review_status) selectedModel.eng_review_status = payload.eng_review_status;
       updateDetailTitle(model, payload.lines, payload);
       renderBomLines(payload.lines, payload);
-      await syncAssetsForSelectedModel();
-      await loadMountReadiness({ silent: true });
+      // 坐标/Gerber/完备性后台加载，避免点订单后整页卡住
+      void syncAssetsForSelectedModel().catch((err) => console.warn('工程资料同步失败', err));
+      void loadMountReadiness({ silent: true }).catch(() => {});
     } catch (e) {
       profileBar?.classList.add('hidden');
       if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="empty">明细加载失败</td></tr>';
       window.EMS.showToast('BOM 明细加载失败：' + e.message, 'error', 6000);
       clearMountReadinessPanel();
-      await syncAssetsForSelectedModel();
+      void syncAssetsForSelectedModel().catch(() => {});
     }
   }
 
@@ -2843,7 +3623,8 @@
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      window.EMS.showToast('BOM 已导出');
+      const isZip = /\.zip$/i.test(filename) || (res.headers.get('Content-Type') || '').includes('zip');
+      window.EMS.showToast(isZip ? '已导出 BOM（含管制 PDF）' : 'BOM 已导出（含替代料/管制信息）');
     } catch (e) {
       window.EMS.showToast(e.message, 'error');
     }
@@ -3111,13 +3892,10 @@
           : kitMountFilter === 'unresolved'
             ? '没有待确认贴装行'
             : '无明细';
-      tbody.innerHTML = `<tr><td colspan="13" class="empty">${emptyMsg}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">${emptyMsg}</td></tr>`;
       return;
     }
     tbody.innerHTML = filtered.map((l) => {
-      const stockQty = l.stock_qty != null ? Number(l.stock_qty) : Number(l.own_stock_qty ?? 0);
-      const stockClass = stockQty < 0 ? 'qty-negative' : '';
-      const stockCell = `<strong class="${stockClass}">${formatQty(stockQty)}</strong>`;
       const rowCls = kitLineNeedsAttention(l) ? ' eng-kit-row-warn' : '';
       return `
         <tr class="${rowCls.trim()}" title="${mountSourceHint(l.mount_source)}">
@@ -3129,11 +3907,6 @@
           <td>${mountReasonCell(l)}</td>
           <td>${l.qty_per ?? '—'}</td>
           <td class="eng-kit-pos">${l.position || '—'}</td>
-          <td class="eng-kit-stock-col">${l.required_qty}</td>
-          <td class="eng-kit-stock-col">${stockCell}</td>
-          <td class="eng-kit-stock-col">${l.shortage_qty}</td>
-          <td class="eng-kit-stock-col"><span class="${kitClass(l.status)}">${kitLabel(l.status)}</span></td>
-          <td class="eng-kit-sub eng-kit-stock-col">${renderSubstitutes(l)}</td>
         </tr>`;
     }).join('');
     bindMountEditors(document.getElementById('eng-kit-modal'));
@@ -3165,10 +3938,10 @@
       if (summaryEl) {
         const stats = dossier?.mount_stats;
         let text =
-          `${orderLabel}${kit.model_code || selectedModel?.model_code || ''} × ${kit.order_qty}` +
-          ` · 缺类型 ${missingType} · 待确认 ${unresolved}（本页不核算库存齐套）`;
+          `${orderLabel}${kit.model_code || selectedModel?.model_code || ''}` +
+          ` · 缺类型 ${missingType} · 待确认 ${unresolved}`;
         if (effectiveReviewStatus(selectedModel, dossier) === 'pending_review') {
-          text += ' · 请先核对上方齐套检查，再点「审核通过」或「退回修正」';
+          text += ' · 请核对贴装后点「审核通过」或「退回修正」';
         }
         summaryEl.textContent = text;
       }
@@ -3204,12 +3977,178 @@
   let reviewTodoMeta = { title: '待处理事项', hint: '', todo_kind: '' };
   let lastReviewTodoCount = -1;
   let reviewTodoTimer = null;
+  let engStatusBoard = { counts: {}, import_items: [], review_items: [], missing_breakdown: {} };
+
+  function assetMark(ok) {
+    return ok
+      ? '<span class="eng-asset-ok" title="已导入">✓</span>'
+      : '<span class="eng-asset-miss" title="未导入">缺</span>';
+  }
+
+  function missingChips(missing) {
+    const list = missing || [];
+    if (!list.length) return '<span class="muted">—</span>';
+    return list.map((m) => `<span class="eng-miss-chip">${escapeHtml(m)}</span>`).join('');
+  }
+
+  function statusBoardKey(item) {
+    return `${item?.purchase_no || ''}|${item?.model_code || ''}|${item?.bom_model_id || item?.id || ''}`;
+  }
+
+  function findImportGapForModel(model) {
+    const items = engStatusBoard.import_items || [];
+    const pn = String(model?.purchase_no || '').trim();
+    const code = String(model?.model_code || '').trim();
+    const id = model?.id || model?.bom_model_id || null;
+    return items.find((it) => {
+      if (id && it.bom_model_id && Number(it.bom_model_id) === Number(id)) return true;
+      return String(it.purchase_no || '').trim() === pn && String(it.model_code || '').trim() === code;
+    }) || null;
+  }
+
+  function renderStatusBoardBar() {
+    const counts = engStatusBoard.counts || {};
+    const br = engStatusBoard.missing_breakdown || {};
+    const imp = Number(counts.pending_import || 0);
+    const rev = Number(counts.pending_review || 0);
+    const elImp = document.getElementById('eng-status-import-n');
+    const elRev = document.getElementById('eng-status-review-n');
+    const elBr = document.getElementById('eng-status-breakdown');
+    if (elImp) elImp.textContent = String(imp);
+    if (elRev) elRev.textContent = String(rev);
+    if (elBr) {
+      elBr.textContent = imp
+        ? `缺项分布：BOM ${br.bom || 0} · 坐标 ${br.placement || 0} · Gerber ${br.gerber || 0}`
+        : '当前客户无待导入缺项';
+    }
+    const tabImp = document.getElementById('eng-status-tab-import');
+    const tabRev = document.getElementById('eng-status-tab-review');
+    if (tabImp) tabImp.textContent = `待导入（${imp}）`;
+    if (tabRev) tabRev.textContent = `待审核（${rev}）`;
+  }
+
+  function setStatusBoardTab(tab) {
+    const isImport = tab !== 'review';
+    document.getElementById('eng-status-panel-import')?.classList.toggle('hidden', !isImport);
+    document.getElementById('eng-status-panel-review')?.classList.toggle('hidden', isImport);
+    document.getElementById('eng-status-tab-import')?.classList.toggle('active', isImport);
+    document.getElementById('eng-status-tab-review')?.classList.toggle('active', !isImport);
+  }
+
+  function renderStatusBoardModal() {
+    const importBody = document.getElementById('eng-status-import-table');
+    const reviewBody = document.getElementById('eng-status-review-table');
+    const hint = document.getElementById('eng-status-board-modal-hint');
+    const counts = engStatusBoard.counts || {};
+    if (hint) {
+      hint.textContent = `待导入 ${counts.pending_import || 0} 份 · 待审核 ${counts.pending_review || 0} 份。缺 BOM/坐标/Gerber 任一不能送审；每料须有工序与面别才能审核通过。`;
+    }
+    const imports = engStatusBoard.import_items || [];
+    if (importBody) {
+      if (!imports.length) {
+        importBody.innerHTML = '<tr><td colspan="8" class="empty">暂无待导入资料</td></tr>';
+      } else {
+        importBody.innerHTML = imports.map((it, idx) => {
+          const modelLabel = it.model_name
+            ? `<strong>${escapeHtml(it.model_code || '—')}</strong><div class="muted" style="font-size:12px">${escapeHtml(it.model_name)}</div>`
+            : `<strong>${escapeHtml(it.model_code || '—')}</strong>`;
+          return `<tr>
+            <td>${escapeHtml(it.internal_code || '—')}</td>
+            <td>${modelLabel}</td>
+            <td>${escapeHtml(it.purchase_no || '—')}</td>
+            <td>${assetMark(!!it.has_bom)}</td>
+            <td>${assetMark(!!it.has_placement)}</td>
+            <td>${assetMark(!!it.has_gerber)}</td>
+            <td>${missingChips(it.missing_imports)}</td>
+            <td><button type="button" class="btn btn-primary btn-sm eng-status-open-import" data-idx="${idx}">去导入</button></td>
+          </tr>`;
+        }).join('');
+        importBody.querySelectorAll('.eng-status-open-import').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const item = imports[Number(btn.dataset.idx)];
+            if (!item) return;
+            document.getElementById('eng-status-board-modal')?.classList.add('hidden');
+            openReviewTodoItem({ ...item, todo_type: 'import' });
+          });
+        });
+      }
+    }
+    const reviews = engStatusBoard.review_items || [];
+    if (reviewBody) {
+      if (!reviews.length) {
+        reviewBody.innerHTML = '<tr><td colspan="6" class="empty">暂无待审核资料</td></tr>';
+      } else {
+        reviewBody.innerHTML = reviews.map((it, idx) => {
+          const modelLabel = it.model_name
+            ? `<strong>${escapeHtml(it.model_code || '—')}</strong><div class="muted" style="font-size:12px">${escapeHtml(it.model_name)}</div>`
+            : `<strong>${escapeHtml(it.model_code || '—')}</strong>`;
+          return `<tr>
+            <td>${escapeHtml(it.internal_code || '—')}</td>
+            <td>${modelLabel}</td>
+            <td>${escapeHtml(it.purchase_no || '—')}</td>
+            <td>${escapeHtml(it.submitter || '—')}</td>
+            <td class="eng-todo-summary" title="${escapeHtml(it.summary || '')}">${escapeHtml(it.summary || '资料待审核')}</td>
+            <td><button type="button" class="btn btn-primary btn-sm eng-status-open-review" data-idx="${idx}">去处理</button></td>
+          </tr>`;
+        }).join('');
+        reviewBody.querySelectorAll('.eng-status-open-review').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const item = reviews[Number(btn.dataset.idx)];
+            if (!item) return;
+            document.getElementById('eng-status-board-modal')?.classList.add('hidden');
+            openReviewTodoItem({ ...item, todo_type: 'review' });
+          });
+        });
+      }
+    }
+  }
+
+  async function loadEngStatusBoard({ silent = true, openModal = false, tab = '', detail = false } = {}) {
+    const code = getActiveInternalCode() || '';
+    const needDetail = !!(openModal || detail);
+    const qs = new URLSearchParams();
+    if (code) qs.set('internal_code', code);
+    qs.set('detail', needDetail ? '1' : '0');
+    try {
+      const data = await engApi(`/status-board?${qs.toString()}`) || {};
+      if (needDetail) {
+        engStatusBoard = data;
+      } else {
+        engStatusBoard = {
+          ...engStatusBoard,
+          counts: data.counts || engStatusBoard.counts || {},
+          missing_breakdown: data.missing_breakdown || engStatusBoard.missing_breakdown || {},
+          // 轻量模式不覆盖明细，避免把已加载明细清空
+          import_items: engStatusBoard.import_items || [],
+          review_items: engStatusBoard.review_items || [],
+        };
+      }
+      renderStatusBoardBar();
+      if (openModal) {
+        renderStatusBoardModal();
+        if (tab) setStatusBoardTab(tab);
+        document.getElementById('eng-status-board-modal')?.classList.remove('hidden');
+      }
+    } catch (e) {
+      if (!silent) window.EMS.showToast(e.message || '加载资料进度失败', 'error');
+    }
+    return engStatusBoard;
+  }
+
+  function openEngStatusBoard(tab) {
+    void loadEngStatusBoard({ silent: false, openModal: true, tab: tab || 'import', detail: true }).then(() => {
+      renderStatusBoardModal();
+      setStatusBoardTab(tab || 'import');
+    });
+  }
 
   function canReceiveTodoPush() {
     const u = window.EMS.getCurrentUser() || {};
     const role = u.role || '';
     const name = engUsername();
-    // 黄星待审；邱梦林待导入/退回；WGQ/其它管理员待审
+    // 仅查看导出账号不收待审/待导入推送
+    if (isEngViewExportOnly() || name === 'dxpz001') return false;
+    // 黄星待审；邱梦林/任玉娴待导入/退回；WGQ/其它管理员待审
     return (
       isEngImportOnly()
       || isEngAuditOnly()
@@ -3218,6 +4157,7 @@
       || name === 'wgq'
       || name === 'dxsmt001'
       || name === 'dxgc'
+      || name === 'dxgc002'
     );
   }
 
@@ -3260,8 +4200,11 @@
         ? `<strong>${escapeHtml(item.model_code || '—')}</strong><div class="muted" style="font-size:12px;font-weight:400">${escapeHtml(item.model_name)}</div>`
         : `<strong>${escapeHtml(item.model_code || '—')}</strong>`;
       const who = kind === 'import'
-        ? (item.summary || '待导入 BOM')
+        ? (item.missing_label ? `缺 ${item.missing_label}` : (item.summary || '待导入'))
         : (item.submitter || '—');
+      const summaryHtml = kind === 'import' && (item.missing_imports || []).length
+        ? `${missingChips(item.missing_imports)} <span class="muted">${escapeHtml(item.summary || '')}</span>`
+        : escapeHtml(item.summary || reviewTodoMeta.title || '待处理');
       const summaryCls = kind === 'rejected' ? 'eng-todo-summary eng-todo-summary-reject' : 'eng-todo-summary';
       const rowCls = kind === 'rejected' ? 'eng-todo-row-rejected' : '';
       return `
@@ -3271,7 +4214,7 @@
         <td>${modelLabel}</td>
         <td>${escapeHtml(item.purchase_no || '—')}</td>
         <td>${escapeHtml(who)}</td>
-        <td title="${escapeHtml(item.summary || '')}" class="${summaryCls}">${escapeHtml(item.summary || reviewTodoMeta.title || '待处理')}</td>
+        <td title="${escapeHtml(item.summary || '')}" class="${summaryCls}">${summaryHtml}</td>
         <td>${formatReviewTodoTime(item.submitted_at || item.updated_at)}</td>
         <td><button type="button" class="btn btn-primary btn-sm eng-todo-open" data-idx="${idx}">${todoActionLabel(item)}</button></td>
       </tr>`;
@@ -3301,11 +4244,13 @@
     if (headTitle) headTitle.textContent = reviewTodoMeta.title || '待处理事项';
     if (headHint) headHint.textContent = ` · ${reviewTodoMeta.hint || '按你的帐号推送，无需自己查找'}`;
     if (banner) {
-      const label = reviewTodoMeta.title || '待处理事项';
+      const counts = engStatusBoard.counts || {};
+      const imp = Number(counts.pending_import || 0);
+      const rev = Number(counts.pending_review || 0);
       const n = reviewTodoItems.length;
-      const urgent = n > 0 ? ' eng-review-banner-urgent' : '';
+      const urgent = (imp + rev) > 0 || n > 0 ? ' eng-review-banner-urgent' : '';
       banner.className = `eng-review-banner${urgent}`;
-      banner.innerHTML = `${escapeHtml(label)} <span id="eng-todo-badge" class="eng-todo-badge${n > 0 ? ' eng-todo-badge-pulse' : ''}">${n}</span>`;
+      banner.innerHTML = `待导入 <span class="eng-todo-badge">${imp}</span> · 待审核 <span class="eng-todo-badge">${rev}</span>`;
     }
     if (!reviewTodoItems.length) {
       panel?.classList.add('hidden');
@@ -3317,10 +4262,14 @@
       list.innerHTML = reviewTodoItems.map((item, idx) => {
         const kind = item.todo_type || reviewTodoMeta.todo_kind;
         const rejectCls = kind === 'rejected' ? ' eng-todo-item-rejected' : '';
+        const missHtml = kind === 'import' && (item.missing_imports || []).length
+          ? `<div class="eng-todo-item-meta">${missingChips(item.missing_imports)}</div>`
+          : `<div class="eng-todo-item-meta">${escapeHtml(item.summary || '')}</div>`;
         return `
         <div class="eng-todo-item${rejectCls}">
           <div class="eng-todo-item-main">
             <div class="eng-todo-item-title">${todoTypeBadge(item)} ${escapeHtml(item.internal_code || '')} · ${escapeHtml(item.model_code || '')} · 订单 ${escapeHtml(item.purchase_no || '—')}</div>
+            ${missHtml}
           </div>
           <button type="button" class="btn btn-primary btn-sm eng-todo-open" data-idx="${idx}">${todoActionLabel(item)}</button>
         </div>`;
@@ -3395,6 +4344,14 @@
         hint: data?.hint || '',
         todo_kind: data?.todo_kind || '',
       };
+      if (data?.counts) {
+        engStatusBoard = {
+          ...engStatusBoard,
+          counts: data.counts,
+          missing_breakdown: data.missing_breakdown || engStatusBoard.missing_breakdown || {},
+        };
+        renderStatusBoardBar();
+      }
       const n = reviewTodoItems.length;
       if (!silent && lastReviewTodoCount >= 0 && n > lastReviewTodoCount) {
         const added = n - lastReviewTodoCount;
@@ -3446,7 +4403,7 @@
     if (!canReceiveTodoPush()) return;
     if (reviewTodoTimer) clearInterval(reviewTodoTimer);
     loadReviewInbox({ silent: true });
-    reviewTodoTimer = setInterval(() => loadReviewInbox({ silent: false }), 30000);
+    reviewTodoTimer = setInterval(() => loadReviewInbox({ silent: false }), 60000);
   }
 
   async function exportKitting() {
@@ -3530,6 +4487,99 @@
     fileInput.click();
   }
 
+  let lastEngAuditPayload = null;
+
+  function renderEngAuditBody(payload) {
+    const el = document.getElementById('eng-data-audit-body');
+    if (!el) return;
+    if (!payload) {
+      el.innerHTML = '<p class="empty">暂无数据</p>';
+      return;
+    }
+    const s = payload.summary || {};
+    const orders = payload.affected_orders || [];
+    const reprint = payload.reprint_recommendations || [];
+    const leaks = (payload.bom_leak_all || []).filter((r) => r.status === 'leak');
+    const orderRows = orders.slice(0, 80).map((o) => `
+      <tr>
+        <td>${escapeHtml(o.purchase_no || '—')}</td>
+        <td>${escapeHtml(o.model_code || '—')}</td>
+        <td>${o.order_qty ?? '—'}</td>
+        <td>${o.issue_line_count ?? 0}</td>
+        <td class="cell-wrap">${escapeHtml(o.sample_materials || '')}</td>
+      </tr>`).join('');
+    const reprintRows = reprint.slice(0, 40).map((r) => `
+      <tr>
+        <td>${escapeHtml(r.purchase_no || '')}</td>
+        <td>${escapeHtml(r.material_code || '')}</td>
+        <td>${escapeHtml(r.sub_code || '—')}</td>
+        <td>${r.bom_qty_per ?? '—'}</td>
+        <td>${r.correct_need ?? '—'}</td>
+        <td style="color:#c00">${r.wrong_printed_qty_per ?? '—'}</td>
+      </tr>`).join('');
+    el.innerHTML = `
+      <div style="line-height:1.7;margin-bottom:12px">
+        <div><strong>发料用量风险</strong>：${s.substitution_qty_issue_count ?? 0} 行 / ${s.substitution_affected_orders ?? 0} 订单（菲力斯等，规则 qty=整单总数）</div>
+        <div><strong>BOM 漏料对比</strong>：${s.bom_total ?? 0} 套，一致 ${s.bom_ok ?? 0}，漏料 <span style="color:${leaks.length ? '#c00' : 'inherit'}">${s.bom_leak ?? 0}</span>，无快照 ${s.bom_no_snapshot ?? 0}</div>
+        <div><strong>历史误打留痕</strong>：${s.wrong_print_log_rows ?? 0} 条；建议重打 ${s.reprint_order_count ?? 0} 单</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">生成：${escapeHtml((payload.generated_at || '').replace('T', ' ').slice(0, 19))} UTC</div>
+      </div>
+      ${orders.length ? `<h3 style="margin:12px 0 6px;font-size:14px">受影响订单（${orders.length}）</h3>
+      <div style="max-height:220px;overflow:auto">
+        <table class="data-table"><thead><tr>
+          <th>订单号</th><th>机型</th><th>订单量</th><th>风险料数</th><th>示例料号</th>
+        </tr></thead><tbody>${orderRows}</tbody></table>
+      </div>` : ''}
+      ${reprint.length ? `<h3 style="margin:12px 0 6px;font-size:14px">建议重打发料单（${reprint.length} 料）</h3>
+      <div style="max-height:180px;overflow:auto">
+        <table class="data-table"><thead><tr>
+          <th>订单号</th><th>BOM料号</th><th>替代料</th><th>正确用量</th><th>正确需求</th><th>曾误打用量</th>
+        </tr></thead><tbody>${reprintRows}</tbody></table>
+      </div>` : ''}
+      ${leaks.length ? `<p style="color:#c00;margin-top:10px">漏料 BOM ${leaks.length} 套，请下载 Excel 查看明细。</p>` : ''}
+    `;
+  }
+
+  async function runEngDataAudit() {
+    const btn = document.getElementById('btn-eng-data-audit-run');
+    const body = document.getElementById('eng-data-audit-body');
+    if (body) body.innerHTML = '<p class="empty">自查中，请稍候…</p>';
+    if (btn) btn.disabled = true;
+    try {
+      const payload = await engApi('/audit/data-integrity');
+      lastEngAuditPayload = payload;
+      renderEngAuditBody(payload);
+      window.EMS.showToast('工程资料自查完成', 'success', 4000);
+    } catch (e) {
+      if (body) body.innerHTML = `<p class="empty" style="color:#c00">${escapeHtml(e.message || '自查失败')}</p>`;
+      window.EMS.showToast(e.message || '自查失败', 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function openEngDataAuditModal() {
+    document.getElementById('eng-data-audit-modal')?.classList.remove('hidden');
+    if (lastEngAuditPayload) {
+      renderEngAuditBody(lastEngAuditPayload);
+    }
+  }
+
+  async function downloadEngAuditXlsx() {
+    try {
+      const res = await fetch(API + '/audit/data-integrity.xlsx', { headers: { ...window.EMS.authHeaders() } });
+      if (!res.ok) throw new Error('下载失败');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `工程资料自查_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      window.EMS.showToast(e.message || '下载失败', 'error');
+    }
+  }
+
   const ENG_TAB_ALIASES = {
     bom: 'bom',
     docs: 'bom',
@@ -3598,11 +4648,28 @@
     document.getElementById('btn-eng-bom-delete')?.addEventListener('click', clearBom);
     document.getElementById('btn-eng-order-delete')?.addEventListener('click', deleteOrder);
     document.getElementById('btn-eng-auto-bind')?.addEventListener('click', autoBind);
+    document.getElementById('btn-eng-data-audit')?.addEventListener('click', openEngDataAuditModal);
+    document.getElementById('btn-eng-data-audit-run')?.addEventListener('click', runEngDataAudit);
+    document.getElementById('btn-eng-data-audit-xlsx')?.addEventListener('click', downloadEngAuditXlsx);
+    document.getElementById('btn-eng-data-audit-close')?.addEventListener('click', () => {
+      document.getElementById('eng-data-audit-modal')?.classList.add('hidden');
+    });
     document.getElementById('btn-eng-search')?.addEventListener('click', loadModels);
     document.getElementById('eng-search')?.addEventListener('keydown', e => { if (e.key === 'Enter') loadModels(); });
     document.getElementById('eng-filter-code')?.addEventListener('change', loadModels);
     document.getElementById('eng-review-banner')?.addEventListener('click', openReviewTodoModal);
-    document.getElementById('btn-eng-todo-refresh')?.addEventListener('click', () => loadReviewInbox({ silent: true }));
+    document.getElementById('btn-eng-todo-refresh')?.addEventListener('click', () => {
+      loadReviewInbox({ silent: true });
+      loadEngStatusBoard({ silent: true });
+    });
+    document.getElementById('btn-eng-status-detail')?.addEventListener('click', () => openEngStatusBoard('import'));
+    document.getElementById('eng-status-chip-import')?.addEventListener('click', () => openEngStatusBoard('import'));
+    document.getElementById('eng-status-chip-review')?.addEventListener('click', () => openEngStatusBoard('review'));
+    document.getElementById('eng-status-tab-import')?.addEventListener('click', () => setStatusBoardTab('import'));
+    document.getElementById('eng-status-tab-review')?.addEventListener('click', () => setStatusBoardTab('review'));
+    document.getElementById('btn-eng-status-board-close')?.addEventListener('click', () => {
+      document.getElementById('eng-status-board-modal')?.classList.add('hidden');
+    });
     document.getElementById('btn-eng-review-inbox-close')?.addEventListener('click', () => {
       document.getElementById('eng-review-inbox-modal')?.classList.add('hidden');
     });
@@ -3668,11 +4735,14 @@
     });
     document.getElementById('btn-eng-kitting')?.addEventListener('click', showKitting);
     document.getElementById('btn-eng-print-issue')?.addEventListener('click', printIssueSlip);
+    document.getElementById('btn-eng-print-history')?.addEventListener('click', showIssuePrintHistory);
+    document.getElementById('btn-eng-print-history-close')?.addEventListener('click', () => {
+      document.getElementById('eng-print-history-modal')?.classList.add('hidden');
+    });
     document.getElementById('btn-eng-issue-print-ok')?.addEventListener('click', doPrintIssueSlip);
     document.getElementById('btn-eng-issue-print-cancel')?.addEventListener('click', () => {
       document.getElementById('eng-issue-print-modal')?.classList.add('hidden');
     });
-    document.getElementById('btn-eng-kit-export')?.addEventListener('click', exportKitting);
     document.getElementById('btn-eng-kit-close')?.addEventListener('click', () => {
       document.getElementById('eng-kit-modal')?.classList.add('hidden');
       renderReviewDossier(null);
@@ -3735,13 +4805,19 @@
     });
     document.getElementById('btn-eng-sub-import-close')?.addEventListener('click', closeSubImportModal);
     document.getElementById('btn-eng-sub-import-confirm')?.addEventListener('click', confirmSubImport);
+    document.getElementById('btn-tda-detail-close')?.addEventListener('click', closeTdaDetailModal);
+    document.getElementById('btn-tda-detail-cancel')?.addEventListener('click', closeTdaDetailModal);
+    document.getElementById('btn-tda-detail-save')?.addEventListener('click', saveTdaDetailModal);
     document.getElementById('btn-eng-proc-search')?.addEventListener('click', loadProcModels);
     document.getElementById('eng-proc-search')?.addEventListener('keydown', e => { if (e.key === 'Enter') loadProcModels(); });
     // eng-proc-filter-code 的 change 由 bindProcFilterCustomer 统一处理（避免先按旧客户回写下拉）
     document.getElementById('btn-eng-proc-sync')?.addEventListener('click', syncProcessRoutes);
     document.getElementById('btn-eng-proc-new')?.addEventListener('click', newProcModel);
     document.getElementById('btn-eng-proc-save')?.addEventListener('click', saveProcRoute);
+    document.getElementById('btn-eng-proc-delete')?.addEventListener('click', deleteProcRoute);
     document.getElementById('btn-eng-place-import')?.addEventListener('click', importPlacement);
+    document.getElementById('btn-eng-place-export')?.addEventListener('click', exportPlacement);
+    document.getElementById('btn-eng-gerber-export')?.addEventListener('click', exportGerber);
     document.getElementById('btn-eng-mount-readiness')?.addEventListener('click', () => loadMountReadiness());
     document.getElementById('btn-eng-mount-ready-copy')?.addEventListener('click', copyMountReadinessAdvice);
     document.getElementById('btn-eng-place-delete')?.addEventListener('click', () => deleteCustomerAsset('placement'));

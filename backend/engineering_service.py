@@ -8,6 +8,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from config import get_engineering_customers, get_engineering_customer_by_srm_id
+from eng_customer_rules import is_engineering_fee_order
 from models import (
     BomLine,
     BomModel,
@@ -69,7 +70,7 @@ def _bom_catalog_match_score(order_code: str, bom: BomModel) -> int:
 
 
 def suggest_bom_model(db: Session, order: SrmOrder) -> Optional[BomModel]:
-    """仅匹配本采购订单号下的专属 BOM，不再按机型共用。"""
+    """匹配本采购订单号下的专属 BOM（同客户/内部码）；机型号不一致时可用文件名证据兜底。"""
     eng = get_engineering_customer_by_srm_id(order.customer_id)
     if not eng:
         return None
@@ -86,11 +87,20 @@ def suggest_bom_model(db: Session, order: SrmOrder) -> Optional[BomModel]:
             BomModel.purchase_no == purchase_no,
             BomModel.line_count > 0,
         )
+        .order_by(BomModel.updated_at.desc(), BomModel.id.desc())
         .all()
     )
     for row in models:
         if normalize_code(row.model_code) == product:
             return row
+    # 导入时若未吃到手工单别名，机型号可能仍是 Excel 主件号；文件名常带订单料号（如 PC1459…xlsx）
+    for row in models:
+        blob = normalize_code(f"{row.folder_name or ''}{row.source_file or ''}{row.remark or ''}")
+        if product and product in blob:
+            return row
+    # 本采购单在该客户下仅一份 BOM：按订单级专属挂接
+    if len(models) == 1:
+        return models[0]
     return None
 
 
@@ -103,12 +113,15 @@ def bind_orders_to_bom_by_purchase_no(
     model_code: Optional[str] = None,
 ) -> int:
     """将同一采购订单号下、机型匹配的在制行绑定到指定 BOM。"""
+    from config import expand_customer_ids_for_filter
+
     pn = (purchase_no or "").strip()
     if not pn or not customer_id:
         return 0
+    cids = expand_customer_ids_for_filter(customer_id) or [customer_id]
     q = db.query(SrmOrder).filter(
         SrmOrder.is_completed.is_(False),
-        SrmOrder.customer_id == customer_id,
+        SrmOrder.customer_id.in_(cids),
         SrmOrder.purchase_no == pn,
     )
     bound = 0
@@ -176,10 +189,22 @@ def auto_bind_orders(db: Session, customer_id: Optional[str] = None) -> int:
     return bound
 
 
+def _warehouse_stock_map(db: Session, customer_id: str) -> dict[str, WarehouseMaterial]:
+    stock_map: dict[str, WarehouseMaterial] = {}
+    cid = (customer_id or "").strip()
+    if not cid:
+        return stock_map
+    for mat in db.query(WarehouseMaterial).filter(WarehouseMaterial.customer_id == cid).all():
+        stock_map[normalize_code(mat.material_code)] = mat
+    return stock_map
+
+
 def compute_kitting(
     db: Session,
     bom_model_id: int,
     order_qty: float,
+    *,
+    stock_map: Optional[dict[str, WarehouseMaterial]] = None,
 ) -> dict:
     bom = db.query(BomModel).filter(BomModel.id == bom_model_id).first()
     if not bom:
@@ -190,9 +215,8 @@ def compute_kitting(
         .order_by(BomLine.sort_order.asc(), BomLine.id.asc())
         .all()
     )
-    stock_map: dict[str, WarehouseMaterial] = {}
-    for mat in db.query(WarehouseMaterial).filter(WarehouseMaterial.customer_id == bom.customer_id).all():
-        stock_map[normalize_code(mat.material_code)] = mat
+    if stock_map is None:
+        stock_map = _warehouse_stock_map(db, bom.customer_id or "")
 
     from material_mount_service import load_mount_overrides
 
@@ -210,12 +234,22 @@ def compute_kitting(
     partial_count = 0
     model_code = bom.model_code or ""
     customer_id = bom.customer_id or ""
+    purchase_no = getattr(bom, "purchase_no", None) or ""
     for line, mount in zip(lines, mounts):
-        rule_qty = get_rule_qty_per(line.material_code, customer_id, parent_code=model_code)
+        rule_qty = get_rule_qty_per(
+            line.material_code,
+            customer_id,
+            parent_code=model_code,
+            purchase_no=purchase_no,
+        )
         qty_per = float(rule_qty) if rule_qty is not None else float(line.qty_per or 0)
         required = round(qty_per * order_qty, 4)
         stock_info = resolve_group_stock(
-            line.material_code, stock_map, customer_id, parent_code=model_code
+            line.material_code,
+            stock_map,
+            customer_id,
+            parent_code=model_code,
+            purchase_no=purchase_no,
         )
         mat = stock_map.get(normalize_code(line.material_code))
         own_stock = float(stock_info.get("own_stock_qty") or 0)
@@ -225,6 +259,7 @@ def compute_kitting(
             stock_map,
             customer_id=customer_id,
             parent_code=model_code,
+            purchase_no=purchase_no,
         )
         excel_in = float(mat.excel_in_qty) if mat and mat.excel_in_qty is not None else None
         excel_count = float(mat.excel_count_qty) if mat and mat.excel_count_qty is not None else None
@@ -328,6 +363,204 @@ def order_kitting(db: Session, line_key: str) -> dict:
     return result
 
 
+def compute_kitting_status_only(
+    db: Session,
+    bom_model_id: int,
+    order_qty: float,
+    *,
+    stock_map: Optional[dict[str, WarehouseMaterial]] = None,
+    bom: Optional[BomModel] = None,
+) -> dict:
+    """列表用：只算 ready/partial/shortage，不算贴装面别（更快，只读）。"""
+    if bom is None:
+        bom = db.query(BomModel).filter(BomModel.id == bom_model_id).first()
+    if not bom:
+        return {"material_status": "unknown", "ready_count": 0, "partial_count": 0, "shortage_count": 0, "total_lines": 0}
+    lines = (
+        db.query(BomLine)
+        .filter(BomLine.bom_model_id == bom_model_id, BomLine.is_active.is_(True))
+        .all()
+    )
+    if stock_map is None:
+        stock_map = _warehouse_stock_map(db, bom.customer_id or "")
+    model_code = bom.model_code or ""
+    customer_id = bom.customer_id or ""
+    purchase_no = getattr(bom, "purchase_no", None) or ""
+    shortage_count = 0
+    partial_count = 0
+    ready_count = 0
+    for line in lines:
+        rule_qty = get_rule_qty_per(
+            line.material_code,
+            customer_id,
+            parent_code=model_code,
+            purchase_no=purchase_no,
+        )
+        qty_per = float(rule_qty) if rule_qty is not None else float(line.qty_per or 0)
+        required = round(qty_per * float(order_qty or 0), 4)
+        stock_info = resolve_group_stock(
+            line.material_code,
+            stock_map,
+            customer_id,
+            parent_code=model_code,
+            purchase_no=purchase_no,
+        )
+        mat = stock_map.get(normalize_code(line.material_code))
+        own_stock = float(stock_info.get("own_stock_qty") or 0)
+        substitutes = build_substitute_details(
+            line.material_code,
+            stock_map,
+            customer_id=customer_id,
+            parent_code=model_code,
+            purchase_no=purchase_no,
+        )
+        excel_in = float(mat.excel_in_qty) if mat and mat.excel_in_qty is not None else None
+        excel_demand = float(mat.excel_demand_qty) if mat and mat.excel_demand_qty is not None else None
+        kit_eval = evaluate_kitting_line(
+            required,
+            own_stock,
+            substitutes,
+            excel_in_qty=excel_in,
+            excel_demand_qty=excel_demand,
+        )
+        line_status = str(kit_eval.get("status") or "shortage")
+        if line_status == "ready":
+            ready_count += 1
+        elif line_status == "partial":
+            partial_count += 1
+        else:
+            shortage_count += 1
+    total = len(lines)
+    if not total:
+        overall = "unknown"
+    elif shortage_count == 0 and partial_count == 0:
+        overall = "ready"
+    elif shortage_count == total:
+        overall = "shortage"
+    else:
+        overall = "partial"
+    return {
+        "material_status": overall,
+        "ready_count": ready_count,
+        "partial_count": partial_count,
+        "shortage_count": shortage_count,
+        "total_lines": total,
+    }
+
+
+def batch_live_order_kit_summaries(db: Session, orders: list) -> dict[str, dict]:
+    """
+    订单列表齐套：按 BOM×库存现算（只读，不写 srm_orders，不影响扫码）。
+    返回 line_key -> {customer_kit_status, customer_kit_status_label, material_status, collected_sets_qty}
+    """
+    from customer_kitting import (
+        CUSTOMER_KIT_LABELS,
+        is_order_fulfillment_done,
+    )
+
+    out: dict[str, dict] = {}
+    if not orders:
+        return out
+
+    bom_ids = sorted({int(o.bom_model_id) for o in orders if getattr(o, "bom_model_id", None)})
+    bom_by_id: dict[int, BomModel] = {}
+    if bom_ids:
+        for b in db.query(BomModel).filter(BomModel.id.in_(bom_ids)).all():
+            bom_by_id[int(b.id)] = b
+
+    stock_cache: dict[str, dict[str, WarehouseMaterial]] = {}
+
+    for order in orders:
+        lk = (getattr(order, "line_key", None) or "").strip()
+        if not lk:
+            continue
+        order_qty = float(order.batch_pur_qty or order.output_qty or 0)
+        if is_order_fulfillment_done(
+            order_qty=order_qty,
+            delivery_qty=getattr(order, "delivery_qty", None),
+            un_delivery_qty=getattr(order, "un_delivery_qty", None),
+            receive_qty=getattr(order, "receive_qty", None),
+            is_completed=bool(getattr(order, "is_completed", False)),
+        ):
+            out[lk] = {
+                "customer_kit_status": "ready",
+                "customer_kit_status_label": CUSTOMER_KIT_LABELS.get("ready", "已齐套"),
+                "material_status": "ready",
+                "collected_sets_qty": order_qty if order_qty > 0 else float(order.collected_sets_qty or 0),
+            }
+            continue
+
+        bom_id = getattr(order, "bom_model_id", None)
+        if not bom_id:
+            out[lk] = {
+                "customer_kit_status": "unbound",
+                "customer_kit_status_label": CUSTOMER_KIT_LABELS.get("unbound", "未绑BOM"),
+                "material_status": "unbound",
+                "collected_sets_qty": 0.0,
+            }
+            continue
+
+        bom = bom_by_id.get(int(bom_id))
+        if not bom:
+            out[lk] = {
+                "customer_kit_status": "unbound",
+                "customer_kit_status_label": CUSTOMER_KIT_LABELS.get("unbound", "未绑BOM"),
+                "material_status": "unbound",
+                "collected_sets_qty": 0.0,
+            }
+            continue
+
+        cid = (bom.customer_id or "").strip()
+        if cid not in stock_cache:
+            stock_cache[cid] = _warehouse_stock_map(db, cid)
+        try:
+            kit = compute_kitting_status_only(
+                db,
+                int(bom_id),
+                order_qty,
+                stock_map=stock_cache[cid],
+                bom=bom,
+            )
+        except Exception:
+            out[lk] = {
+                "customer_kit_status": "na",
+                "customer_kit_status_label": "—",
+                "material_status": "unknown",
+                "collected_sets_qty": float(order.collected_sets_qty or 0),
+            }
+            continue
+
+        ms = kit.get("material_status") or "unknown"
+        if ms == "ready":
+            kit_status = "ready"
+        elif ms == "partial":
+            kit_status = "partial"
+        elif ms == "shortage":
+            kit_status = "unkit"
+        elif ms == "unbound":
+            kit_status = "unbound"
+        else:
+            kit_status = "na"
+
+        # 估算可齐套套数（列表提示用）
+        collected = float(order.collected_sets_qty or 0)
+        if ms == "ready" and order_qty > 0:
+            collected = order_qty
+        elif ms == "partial" and order_qty > 0:
+            total = int(kit.get("total_lines") or 0)
+            ready = int(kit.get("ready_count") or 0)
+            if total > 0 and ready > 0:
+                collected = round(order_qty * ready / total, 4)
+
+        out[lk] = {
+            "customer_kit_status": kit_status,
+            "customer_kit_status_label": CUSTOMER_KIT_LABELS.get(kit_status, kit_status or "—"),
+            "material_status": ms,
+            "collected_sets_qty": collected,
+        }
+    return out
+
+
 def refresh_customer_material_kitting(
     db: Session,
     customer_id: str,
@@ -339,6 +572,8 @@ def refresh_customer_material_kitting(
     if not is_customer_kit_ems(customer_id):
         return 0
 
+    from customer_kitting import is_order_fulfillment_done
+
     auto_bind_orders(db, customer_id)
     orders = (
         db.query(SrmOrder)
@@ -347,6 +582,18 @@ def refresh_customer_material_kitting(
     )
     updated = 0
     for order in orders:
+        order_qty = float(order.batch_pur_qty or order.output_qty or 0)
+        # 已出完：直接冻结已齐套，跳过 BOM×库存（库存已被领用会误报未齐套）
+        if is_order_fulfillment_done(
+            order_qty=order_qty,
+            delivery_qty=getattr(order, "delivery_qty", None),
+            un_delivery_qty=getattr(order, "un_delivery_qty", None),
+            receive_qty=getattr(order, "receive_qty", None),
+            is_completed=False,
+        ):
+            if apply_ems_material_kitting_state(order, {"material_status": "ready"}, kitting_alerts):
+                updated += 1
+            continue
         try:
             kit = order_kitting(db, order.line_key)
         except Exception:
@@ -407,7 +654,20 @@ def clear_bom_model(db: Session, model_id: int) -> dict:
     bom.mount_profile_override = None
     bom.synced_at = None
     bom.is_active = False
+    # 清除后重置审核，避免「删了再导」被旧 approved + 自动审吞掉待办
+    bom.content_hash = ""
+    bom.import_snapshot_json = None
+    bom.eng_review_status = "pending_import"
+    bom.eng_review_message = "BOM 已清除，请重新导入后再送审"
+    bom.eng_submitter = None
+    bom.eng_submitted_at = None
+    bom.eng_reviewed_by = None
+    bom.eng_reviewed_at = None
     bom.updated_at = datetime.utcnow()
+    db.query(EngReviewInbox).filter(
+        EngReviewInbox.bom_model_id == model_id,
+        EngReviewInbox.status != "done",
+    ).update({"status": "done"}, synchronize_session=False)
     label = f"{model_code}" + (f" / {purchase_no}" if purchase_no else "")
     return {
         "message": f"已清除 BOM {label}",
@@ -649,6 +909,15 @@ def list_bom_order_catalog(
             alias = str(alias).strip()
             if alias:
                 srm_by_cid[alias] = c
+        # 手工录单客户名哈希 ID（如 华夏恒泰 → manual_36fec023）
+        try:
+            from manual_order_service import manual_customer_id
+
+            name = (c.get("name") or "").strip()
+            if name:
+                srm_by_cid[manual_customer_id(name)] = c
+        except Exception:
+            pass
     if not srm_by_cid:
         return []
 
@@ -667,6 +936,15 @@ def list_bom_order_catalog(
                     (row.model_code_norm or normalize_code(row.model_code)).strip(),
                 )
             )
+
+    # 只灌胶等工序：免工程资料导入，不进目录/待导入
+    from process_route_service import eng_docs_exempt_model_norms
+
+    exempt_norms: set[str] = set()
+    for ic0 in hide_ics or {""}:
+        exempt_norms |= eng_docs_exempt_model_norms(db, internal_code=ic0)
+    if not hide_ics:
+        exempt_norms |= eng_docs_exempt_model_norms(db, internal_code="")
 
     orders = (
         db.query(SrmOrder)
@@ -688,11 +966,21 @@ def list_bom_order_catalog(
         if not eng:
             continue
         ic = eng["internal_code"]
+        if is_engineering_fee_order(
+            internal_code=ic,
+            customer_id=order.customer_id or "",
+            order_type_name=order.order_type_name,
+            product_goods_no=order.product_goods_no,
+            product_goods_name=order.product_goods_name,
+        ):
+            continue
         pn = (order.purchase_no or "").strip()
         norm = normalize_code(order.product_goods_no)
         if not pn or not norm:
             continue
         if (ic, pn, norm) in hidden_keys:
+            continue
+        if norm in exempt_norms:
             continue
         key = (ic, pn, norm)
         group = groups.get(key)
@@ -728,6 +1016,20 @@ def list_bom_order_catalog(
         ):
             group["latest_purchase_date"] = purchase_date
 
+    # 采购单 → 订单料号列表（过滤误绑空 BOM 壳）
+    po_order_codes: dict[tuple[str, str], list[str]] = {}
+    for order in orders:
+        eng = srm_by_cid.get(order.customer_id)
+        if not eng:
+            continue
+        ic_o = eng["internal_code"]
+        pn_o = (order.purchase_no or "").strip()
+        code_o = str(order.product_goods_no or "").strip()
+        if pn_o and code_o:
+            bucket = po_order_codes.setdefault((ic_o, pn_o), [])
+            if code_o not in bucket:
+                bucket.append(code_o)
+
     bom_q = db.query(BomModel).filter(BomModel.is_active.is_(True), BomModel.line_count > 0)
     if internal_code:
         bom_q = bom_q.filter(BomModel.internal_code == internal_code.strip().upper())
@@ -741,6 +1043,121 @@ def list_bom_order_catalog(
             continue
         order_boms[(bom.internal_code, pn, normalize_code(bom.model_code))] = bom
         order_boms_by_pn.setdefault((bom.internal_code, pn), []).append(bom)
+
+    # 已清除 BOM（待重新导入）：保留目录行，含已结案订单
+    shell_q = db.query(BomModel).filter(
+        BomModel.purchase_no.isnot(None),
+        BomModel.purchase_no != "",
+        BomModel.line_count <= 0,
+    )
+    if internal_code:
+        shell_q = shell_q.filter(BomModel.internal_code == internal_code.strip().upper())
+    if customer_id:
+        shell_q = shell_q.filter(BomModel.customer_id == customer_id.strip())
+    from bom_excel import _strict_order_model_match
+
+    for bom in shell_q.all():
+        pn = (bom.purchase_no or "").strip()
+        if not pn:
+            continue
+        if (bom.line_count or 0) <= 0:
+            po_codes = po_order_codes.get((bom.internal_code, pn)) or []
+            mc = (bom.model_code or "").strip()
+            if po_codes and mc and not _strict_order_model_match(po_codes, mc):
+                continue
+        key = (bom.internal_code, pn, normalize_code(bom.model_code))
+        if key not in order_boms:
+            order_boms[key] = bom
+            order_boms_by_pn.setdefault((bom.internal_code, pn), []).append(bom)
+
+    # 已导入 BOM：订单结案后仍保留在工程资料目录（资料库，不因 is_completed 隐藏）
+    missing_bom_keys = [k for k in order_boms if k not in groups]
+    if missing_bom_keys:
+        pns = list({k[1] for k in missing_bom_keys})
+        hist_orders = (
+            db.query(SrmOrder)
+            .filter(
+                SrmOrder.customer_id.in_(list(srm_by_cid.keys())),
+                SrmOrder.purchase_no.in_(pns),
+                SrmOrder.product_goods_no.isnot(None),
+                SrmOrder.product_goods_no != "",
+            )
+            .all()
+        )
+        hist_lists: dict[tuple[str, str, str], list[SrmOrder]] = {}
+        for order in hist_orders:
+            eng = srm_by_cid.get(order.customer_id)
+            if not eng:
+                continue
+            ic_h = eng["internal_code"]
+            if is_engineering_fee_order(
+                internal_code=ic_h,
+                customer_id=order.customer_id or "",
+                order_type_name=order.order_type_name,
+                product_goods_no=order.product_goods_no,
+                product_goods_name=order.product_goods_name,
+            ):
+                continue
+            pn_h = (order.purchase_no or "").strip()
+            norm_h = normalize_code(order.product_goods_no)
+            if not pn_h or not norm_h:
+                continue
+            key_h = (ic_h, pn_h, norm_h)
+            if key_h in order_boms and key_h not in groups:
+                hist_lists.setdefault(key_h, []).append(order)
+
+        eng_by_ic = {
+            (c.get("internal_code") or "").strip().upper(): c
+            for c in customers
+            if c.get("internal_code")
+        }
+        for key in missing_bom_keys:
+            ic, pn, norm = key
+            if (ic, pn, norm) in hidden_keys or norm in exempt_norms:
+                continue
+            bom = order_boms[key]
+            eng = eng_by_ic.get(ic)
+            if not eng:
+                continue
+            matched = hist_lists.get(key) or []
+            group = {
+                "internal_code": ic,
+                "customer_id": (bom.customer_id or eng.get("customer_id") or "").strip(),
+                "customer_name": (bom.customer_name or eng.get("name") or "").strip(),
+                "model_code": str(bom.model_code).strip() or norm,
+                "model_name": bom.model_name,
+                "model_spec": bom.model_spec,
+                "purchase_no": pn,
+                "line_key": None,
+                "order_count": 0,
+                "order_qty": 0.0,
+                "latest_purchase_date": None,
+                "_bound_bom_ids": {bom.id},
+                "is_order_completed": True,
+            }
+            for order in matched:
+                group["order_count"] += 1
+                group["order_qty"] = round(
+                    group["order_qty"] + float(order.batch_pur_qty or 0), 4
+                )
+                if order.product_goods_name:
+                    group["model_name"] = order.product_goods_name
+                if order.product_spec:
+                    group["model_spec"] = order.product_spec
+                if order.bom_model_id:
+                    group["_bound_bom_ids"].add(order.bom_model_id)
+                    group["line_key"] = order.line_key
+                purchase_date = order.purchase_date or order.doc_date
+                if purchase_date and (
+                    not group["latest_purchase_date"]
+                    or purchase_date > group["latest_purchase_date"]
+                ):
+                    group["latest_purchase_date"] = purchase_date
+            if matched and not group["line_key"]:
+                group["line_key"] = matched[0].line_key
+            if matched:
+                group["is_order_completed"] = all(o.is_completed for o in matched)
+            groups[key] = group
 
     results: list[dict] = []
     # 同采购订单号下有几个机型行：>1 时禁止「单 BOM 盲挂」，必须各自导入或有料号证据
@@ -778,7 +1195,7 @@ def list_bom_order_catalog(
                 pn_model_group_count.get((group["internal_code"], group["purchase_no"]), 0) == 1
             )
             for bid in group["_bound_bom_ids"]:
-                candidate = db.query(BomModel).filter(BomModel.id == bid, BomModel.is_active.is_(True)).first()
+                candidate = db.query(BomModel).filter(BomModel.id == bid).first()
                 if not candidate or (candidate.purchase_no or "").strip() != group["purchase_no"]:
                     continue
                 if sole_model_on_po or _bom_catalog_match_score(order_code, candidate) > 0:
@@ -803,9 +1220,11 @@ def list_bom_order_catalog(
             "bom_model_id": bom.id if bom else None,
             "eng_review_status": (bom.eng_review_status or "") if bom else "",
             "eng_review_message": (bom.eng_review_message or None) if bom else None,
+            "mount_profile_override": (bom.mount_profile_override or None) if bom else None,
             "order_count": group["order_count"],
             "order_qty": group["order_qty"],
             "latest_purchase_date": group["latest_purchase_date"],
+            "is_order_completed": bool(group.get("is_order_completed")),
             "is_active": True,
             "synced_at": bom.synced_at if bom else None,
             "updated_at": bom.updated_at if bom else None,
@@ -814,22 +1233,24 @@ def list_bom_order_catalog(
             continue
         results.append(item)
 
-    # 按客户汇总替代规则数（parent_code = 机型料号）
+    # 按客户汇总替代规则数（订单号 + 机型料号，避免同机型串单）
     from collections import defaultdict
-    from substitution_service import count_rules_by_parent, normalize_code as sub_norm
+    from substitution_service import count_rules_by_order_parent, normalize_code as sub_norm
 
-    by_cid: dict[str, list[str]] = defaultdict(list)
+    by_cid: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for row in results:
         cid = (row.get("customer_id") or "").strip()
+        pn = (row.get("purchase_no") or "").strip()
         mc = (row.get("model_code") or "").strip()
-        if cid and mc:
-            by_cid[cid].append(mc)
-    count_maps: dict[str, dict[str, int]] = {}
-    for cid, codes in by_cid.items():
-        count_maps[cid] = count_rules_by_parent(db, cid, codes)
+        if cid and pn and mc:
+            by_cid[cid].append((pn, mc))
+    count_maps: dict[str, dict[tuple[str, str], int]] = {}
+    for cid, pairs in by_cid.items():
+        count_maps[cid] = count_rules_by_order_parent(db, cid, pairs)
     for row in results:
         cid = (row.get("customer_id") or "").strip()
-        key = sub_norm(row.get("model_code"))
+        pn = (row.get("purchase_no") or "").strip()
+        key = (pn, sub_norm(row.get("model_code")))
         n = int((count_maps.get(cid) or {}).get(key) or 0)
         row["substitution_rule_count"] = n
         row["has_substitution"] = n > 0
@@ -887,6 +1308,14 @@ def list_bom_model_catalog(
         if not eng:
             continue
         ic = eng["internal_code"]
+        if is_engineering_fee_order(
+            internal_code=ic,
+            customer_id=order.customer_id or "",
+            order_type_name=order.order_type_name,
+            product_goods_no=order.product_goods_no,
+            product_goods_name=order.product_goods_name,
+        ):
+            continue
         norm = normalize_code(order.product_goods_no)
         if not norm:
             continue

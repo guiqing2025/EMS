@@ -49,6 +49,8 @@ class SrmOrder(Base):
     material_status: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
     customer_kitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     is_controlled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # processing=加工订单；expense=费用订单（钢网/治具/测试工装等）
+    biz_kind: Mapped[str] = mapped_column(String(16), default="processing", index=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -73,6 +75,7 @@ class OrderScan(Base):
     code_type: Mapped[str] = mapped_column(String(16), default="unknown")
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     shipment_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    box_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
     operator: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     scanned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     shipped_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -102,13 +105,32 @@ class LegacyPackingScan(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ShipmentSlip(Base):
+    """多订单合并送货单（一张打印单可含多个订单行出库）。"""
+
+    __tablename__ = "shipment_slips"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    slip_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    customer_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    customer_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    ship_date: Mapped[str] = mapped_column(String(32))
+    logistics: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    remark: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    operator: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    line_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_qty: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Shipment(Base):
-    """本地发货单"""
+    """本地发货单（单订单行出库；可挂到合并送货单 slip_id）"""
 
     __tablename__ = "shipments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     shipment_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    slip_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
     line_key: Mapped[str] = mapped_column(String(128), index=True)
     purchase_no: Mapped[str] = mapped_column(String(64), index=True)
     customer_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
@@ -117,9 +139,40 @@ class Shipment(Base):
     qty: Mapped[int] = mapped_column(Integer, default=0)
     ship_date: Mapped[str] = mapped_column(String(32))
     box_count: Mapped[int] = mapped_column(Integer, default=1)
+    qty_per_box: Mapped[int] = mapped_column(Integer, default=1)
     logistics: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     remark: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     operator: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # pending=待审核(未计入已发); approved=已确认已发货
+    approval_status: Mapped[str] = mapped_column(String(16), default="approved", index=True)
+    approved_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ShipmentBox(Base):
+    """发货箱：一箱绑定本箱板码，箱号二维码可追溯。"""
+
+    __tablename__ = "shipment_boxes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    box_no: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    shipment_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    slip_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    line_key: Mapped[str] = mapped_column(String(128), index=True)
+    purchase_no: Mapped[str] = mapped_column(String(64), default="")
+    product_goods_no: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    product_goods_name: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    customer_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    box_index: Mapped[int] = mapped_column(Integer, default=1)
+    box_count: Mapped[int] = mapped_column(Integer, default=1)
+    qty: Mapped[int] = mapped_column(Integer, default=0)
+    qty_target: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="sealed", index=True)
+    pack_mode: Mapped[str] = mapped_column(String(16), default="ship")
+    ship_date: Mapped[str] = mapped_column(String(32), default="")
+    label_printed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    label_printed_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -217,6 +270,8 @@ class User(Base):
     department: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    # JSON：{"pages":["orders-list",...]}；空=按角色默认
+    module_perms: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -652,8 +707,10 @@ class SubstitutionRule(Base):
     parent_unit: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     parent_unit_small: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     parent_attr: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # 采购订单号：空=机型/客户级；非空=仅该订单生效
+    purchase_no: Mapped[str] = mapped_column(String(64), index=True, default="")
     relation_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    sub_code: Mapped[str] = mapped_column(String(64), index=True)
+    sub_code: Mapped[str] = mapped_column(String(64), index=True, default="")
     sub_name: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     sub_spec: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     sub_unit: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
@@ -664,6 +721,8 @@ class SubstitutionRule(Base):
     expiry_date: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     qty: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     remark: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    # confirmed=已确认可同步发料/BOM；pending=待人工确认替代料
+    confirm_status: Mapped[str] = mapped_column(String(16), index=True, default="confirmed")
     source_type: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
     source_file: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     import_batch_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
@@ -952,6 +1011,30 @@ class ProductionSchedule(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class ProductionMasterPlan(Base):
+    """生产主计划：客户/订单/机型/交期/上线日等（与扫码无关）"""
+
+    __tablename__ = "production_master_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    line_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    customer_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    customer_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    purchase_no: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    model_code: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    order_qty: Mapped[float] = mapped_column(Float, default=0)
+    customer_due_date: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    material_prep_date: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    smt_online_date: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    dip_online_date: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    order_status: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    remark: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class LaserBatch(Base):
     """镭雕/贴码登记：流水段 → 采购订单号。
 
@@ -1000,6 +1083,9 @@ class AoiBoardResult(Base):
     line_name: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     tested_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
     source_file: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    # 机台 CSV 缺陷明细摘要（位号:现象），供品质维修改判展示
+    defect_summary: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    defect_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     purchase_no: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     customer_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     laser_batch_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
@@ -1018,6 +1104,189 @@ class AoiSyncFile(Base):
     file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     row_count: Mapped[int] = mapped_column(Integer, default=0)
     processed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PreOvenAoiBoardResult(Base):
+    """炉前 AOI（mes_data）单板结果：同步挂单；后焊扫码卡控前置。"""
+
+    __tablename__ = "pre_oven_aoi_board_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    barcode: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    model_mid: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
+    model_ver: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    laser_date: Mapped[Optional[str]] = mapped_column(String(8), nullable=True, index=True)
+    seq: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    model_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    product_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    side: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    result: Mapped[str] = mapped_column(String(16), default="UNKNOWN", index=True)
+    fail_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    machine: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    tested_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    source_file: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    purchase_no: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    customer_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    laser_batch_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PreOvenAoiSyncFile(Base):
+    """炉前 AOI 已处理源文件去重。"""
+
+    __tablename__ = "pre_oven_aoi_sync_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    machine_id: Mapped[str] = mapped_column(String(32), default="pre-oven-aoi", index=True)
+    filename: Mapped[str] = mapped_column(String(256), index=True)
+    file_mtime: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    processed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PreOvenAoiQcRecord(Base):
+    """炉前 AOI 产线复判 / 品质改判审计（独立于扫码写入路径）。"""
+
+    __tablename__ = "pre_oven_aoi_qc_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    barcode: Mapped[str] = mapped_column(String(64), index=True)
+    action: Mapped[str] = mapped_column(String(16), index=True)  # line_pass | line_fail | qc_pass
+    prev_result: Mapped[str] = mapped_column(String(16))
+    fail_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    prev_machine: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    prev_source_file: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    prev_tested_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    purchase_no: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    model_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    remark: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    operator: Mapped[str] = mapped_column(String(64), index=True)
+    operator_role: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class AoiQcOverride(Base):
+    """品质人工将 AOI FAIL 改判为 PASS 的审计记录（不删原机台 FAIL 痕迹字段在本表）。"""
+
+    __tablename__ = "aoi_qc_overrides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    barcode: Mapped[str] = mapped_column(String(64), index=True)
+    prev_result: Mapped[str] = mapped_column(String(16))
+    new_result: Mapped[str] = mapped_column(String(16), default="PASS")
+    prev_machine: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    prev_source_file: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    prev_tested_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    purchase_no: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    model_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str] = mapped_column(String(256))
+    remark: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    operator: Mapped[str] = mapped_column(String(64), index=True)
+    operator_role: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    storage: Mapped[str] = mapped_column(String(16), default="hot")  # hot | archive
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ProcessDefectImportBatch(Base):
+    """制程不良 Excel 导入批次"""
+
+    __tablename__ = "process_defect_import_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    filename: Mapped[str] = mapped_column(String(256))
+    operator: Mapped[str] = mapped_column(String(64), index=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    customers: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    year_months: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    replaced_rows: Mapped[int] = mapped_column(Integer, default=0)
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ProcessDefectRecord(Base):
+    """制程不良明细（来自品质 Excel 导入）"""
+
+    __tablename__ = "process_defect_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    batch_id: Mapped[int] = mapped_column(Integer, index=True)
+    seq_no: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    report_no: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    defect_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    year_month: Mapped[str] = mapped_column(String(7), default="", index=True)  # YYYY-MM
+    customer_project: Mapped[str] = mapped_column(String(64), default="", index=True)
+    model_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    ref_des: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    defect_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    phenomenon: Mapped[str] = mapped_column(String(128), default="", index=True)
+    phenomenon_norm: Mapped[str] = mapped_column(String(128), default="", index=True)
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    remark: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    station: Mapped[str] = mapped_column(String(32), default="", index=True)
+    inspect_qty: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    defect_qty: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    good_qty: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    defect_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    close_status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ComplaintImportBatch(Base):
+    """客诉 Excel 导入批次"""
+
+    __tablename__ = "complaint_import_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    filename: Mapped[str] = mapped_column(String(256))
+    operator: Mapped[str] = mapped_column(String(64), index=True)
+    customer: Mapped[str] = mapped_column(String(64), default="", index=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    image_count: Mapped[int] = mapped_column(Integer, default=0)
+    year_months: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    replaced_rows: Mapped[int] = mapped_column(Integer, default=0)
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ComplaintRecord(Base):
+    """客诉/检修不良明细"""
+
+    __tablename__ = "complaint_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    batch_id: Mapped[int] = mapped_column(Integer, index=True)
+    customer: Mapped[str] = mapped_column(String(64), default="", index=True)
+    sheet_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    complaint_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    year_month: Mapped[str] = mapped_column(String(7), default="", index=True)
+    model_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    barcode: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    pcba_code: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    station: Mapped[str] = mapped_column(String(64), default="", index=True)
+    ref_des: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    phenomenon: Mapped[str] = mapped_column(String(128), default="")
+    phenomenon_norm: Mapped[str] = mapped_column(String(128), default="", index=True)
+    category: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    qty: Mapped[float] = mapped_column(Float, default=1)
+    dept: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    analysis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="open", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ComplaintImage(Base):
+    """客诉不良图片"""
+
+    __tablename__ = "complaint_images"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    record_id: Mapped[int] = mapped_column(Integer, index=True)
+    batch_id: Mapped[int] = mapped_column(Integer, index=True)
+    rel_path: Mapped[str] = mapped_column(String(512))
+    content_type: Mapped[str] = mapped_column(String(64), default="image/jpeg")
+    sort_no: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class IctBoardResult(Base):
@@ -1074,3 +1343,166 @@ class ProcessScanRecord(Base):
     operator: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     scanned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
+
+class OpsAuditLog(Base):
+    """运营写操作审计（不含产线扫码热路径）。"""
+
+    __tablename__ = "ops_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    actor: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    target_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    target_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    detail_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class DipFirstArticleSession(Base):
+    """DIP 首件对料会话（品质留档；不参与产线扫码卡控）。"""
+
+    __tablename__ = "dip_first_article_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    line_key: Mapped[str] = mapped_column(String(128), index=True)
+    purchase_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    model_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    bom_model_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="in_progress", index=True)
+    # in_progress / passed / cancelled
+    operator: Mapped[str] = mapped_column(String(64), default="", index=True)
+    board_image_rel: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    board_image_content_type: Mapped[str] = mapped_column(String(64), default="image/jpeg")
+    remark: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class DipFirstArticleLine(Base):
+    """DIP 首件对料明细（快照自订单 DIP BOM）。"""
+
+    __tablename__ = "dip_first_article_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(Integer, index=True)
+    bom_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    seq: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    material_code: Mapped[str] = mapped_column(String(128), index=True)
+    material_name: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    spec: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    position: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    qty_per: Mapped[float] = mapped_column(Float, default=1)
+    process: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    mount_type: Mapped[str] = mapped_column(String(16), default="DIP")
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    # pending / pass / fail
+    ocr_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recognized_code: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    verify_method: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # ocr / manual
+    material_image_rel: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    verified_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    sort_no: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class SmtIpqcSession(Base):
+    """SMT 巡检查料会话（品质留档；不参与产线扫码卡控；无需总图）。"""
+
+    __tablename__ = "smt_ipqc_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    line_key: Mapped[str] = mapped_column(String(128), index=True)
+    purchase_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    model_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    bom_model_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="in_progress", index=True)
+    # in_progress / passed / cancelled
+    operator: Mapped[str] = mapped_column(String(64), default="", index=True)
+    remark: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # 巡检面：A / B（站位表 T→A、B→B）；空=无站位时的整单 BOM 抽检
+    inspect_side: Mapped[str] = mapped_column(String(8), default="", index=True)
+
+
+class SmtIpqcLine(Base):
+    """SMT 巡检查料明细（快照自订单 SMT BOM，可附站位表信息）。"""
+
+    __tablename__ = "smt_ipqc_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(Integer, index=True)
+    bom_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    seq: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    material_code: Mapped[str] = mapped_column(String(128), index=True)
+    material_name: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    spec: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    position: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    qty_per: Mapped[float] = mapped_column(Float, default=1)
+    process: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    mount_type: Mapped[str] = mapped_column(String(16), default="SMT")
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    # pending / pass / fail
+    ocr_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recognized_code: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    verify_method: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    material_image_rel: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    verified_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    sort_no: Mapped[int] = mapped_column(Integer, default=0)
+    # 站位表快照（可空：无站位表时仅 BOM）
+    station_no: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    feeder: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    station_material_spec: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    station_side: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    in_station_table: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 站位表文件名 _1/_2 → 1 号机 / 2 号机（巡检先核完 1 再核 2）
+    station_machine_no: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class SmtStationFile(Base):
+    """SMT 站位表文件（共享盘只读同步；不参与扫码卡控）。"""
+
+    __tablename__ = "smt_station_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rel_path: Mapped[str] = mapped_column(String(512), unique=True, index=True)
+    folder_name: Mapped[str] = mapped_column(String(256), default="", index=True)
+    filename: Mapped[str] = mapped_column(String(256), default="")
+    model_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    purchase_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    side: Mapped[str] = mapped_column(String(16), default="", index=True)
+    program_name: Mapped[str] = mapped_column(String(256), default="")
+    machine_area: Mapped[str] = mapped_column(String(64), default="")
+    file_mtime: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    source_path: Mapped[str] = mapped_column(String(512), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+
+
+class SmtStationRow(Base):
+    """SMT 站位表明细行。"""
+
+    __tablename__ = "smt_station_rows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    file_id: Mapped[int] = mapped_column(Integer, index=True)
+    model_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    purchase_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    side: Mapped[str] = mapped_column(String(16), default="")
+    machine_id: Mapped[str] = mapped_column(String(64), default="")
+    station_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    feeder: Mapped[str] = mapped_column(String(64), default="")
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    material_spec: Mapped[str] = mapped_column(String(256), default="", index=True)
+    positions: Mapped[str] = mapped_column(String(1024), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+    sort_no: Mapped[int] = mapped_column(Integer, default=0)
+    synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

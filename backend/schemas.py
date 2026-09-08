@@ -45,6 +45,9 @@ class AuthStatus(BaseModel):
     department: Optional[str] = None
     display_name: Optional[str] = None
     must_change_password: bool = False
+    module_pages: Optional[list[str]] = None
+    module_pages_mode: Optional[str] = None
+    allowed_scan_stations: Optional[list[str]] = None
 
 
 class LoginResponse(BaseModel):
@@ -55,6 +58,9 @@ class LoginResponse(BaseModel):
     department: Optional[str] = None
     display_name: str = ""
     must_change_password: bool = False
+    module_pages: Optional[list[str]] = None
+    module_pages_mode: Optional[str] = None
+    allowed_scan_stations: Optional[list[str]] = None
 
 
 class PasswordChangeIn(BaseModel):
@@ -191,10 +197,19 @@ class SrmOrderOut(BaseModel):
     tooling_complete: bool = False
     tooling_status: str = "unknown"
     tooling_status_label: str = "—"
+    biz_kind: str = "processing"
+    biz_kind_label: str = "加工订单"
     synced_at: datetime
     pending_ship_qty: int = 0
     shipped_local_qty: int = 0
+    # 本订单今日已确认发货数（Shipment.ship_date=今天且已审核）
+    shipped_today_qty: int = 0
+    # 已点发货待审核（未计入已发）
+    awaiting_ship_qty: int = 0
+    # 未入库 = 未收 − 入库（入库=待发+已发）；字段名沿用 stock_balance_qty
+    stock_balance_qty: int = 0
     aoi_test_qty: int = 0
+    pre_oven_aoi_qty: int = 0
     plugin_qty: int = 0
     post_solder_qty: int = 0
     ict_test_qty: int = 0
@@ -204,6 +219,10 @@ class SrmOrderOut(BaseModel):
     control_draft_nos: list[str] = []
     has_control: bool = False
     is_new_order: bool = False  # 下单日期在近 3 个自然日内
+    # 计划排产：按订单行（line_key）是否已进入生产主计划
+    in_plan: bool = False
+    plan_status: str = "pending"  # pending | done
+    plan_status_label: str = "待转计划"
 
     class Config:
         from_attributes = True
@@ -243,6 +262,8 @@ class PackingScanIn(BaseModel):
     barcode: str
     code_type: Optional[str] = None
     operator: Optional[str] = None
+    # 多人同时入箱：指定扫入哪一箱（不传则挂到该单最新开箱）
+    box_id: Optional[int] = None
 
 
 class PackingScanOut(BaseModel):
@@ -253,15 +274,90 @@ class PackingScanOut(BaseModel):
     shipped_local_qty: int
     order_qty: float
     message: str
+    # 镭雕纠正后的实际入库行（前端可同步显示机型）
+    line_key: Optional[str] = None
+    purchase_no: Optional[str] = None
+    product_goods_no: Optional[str] = None
+    box_id: Optional[int] = None
+    box_no: Optional[str] = None
+    box_qty: Optional[int] = None
+    box_qty_target: Optional[int] = None
+    box_sealed: Optional[bool] = False
+
+
+class PackBoxOpenIn(BaseModel):
+    line_key: str
+    qty_target: int = 60
+    # True=即使已有装箱中的箱也再开一箱（多人并行「新增箱」）
+    force_new: bool = False
+
+
+class PackBoxSealIn(BaseModel):
+    box_id: int
+
+
+class PackBoxResumeIn(BaseModel):
+    box_id: int
+
+
+class PackBoxAbsorbIn(BaseModel):
+    box_id: int
+
+
+class PackScanDeleteIn(BaseModel):
+    barcode: str
 
 
 class ShipmentCreateIn(BaseModel):
     line_key: str
     ship_date: Optional[str] = None
     box_count: int = 1
+    qty_per_box: int = 1
+    qty: Optional[int] = None  # 出货数；空则全部待出
     logistics: Optional[str] = None
     remark: Optional[str] = None
     operator: Optional[str] = None
+
+
+class PackSpecIn(BaseModel):
+    qty: int
+    qty_per_box: int
+    box_count: Optional[int] = None
+
+
+class ShipmentMultiLineIn(BaseModel):
+    line_key: str
+    qty: int
+    box_count: int = 1
+    qty_per_box: int = 1
+    box_ids: list[int] = []
+    pack_specs: list[PackSpecIn] = []
+    remainder_qty: int = 0
+
+
+class ShipmentMultiCreateIn(BaseModel):
+    customer_id: str
+    ship_date: Optional[str] = None
+    logistics: Optional[str] = None
+    remark: Optional[str] = None
+    operator: Optional[str] = None
+    lines: list[ShipmentMultiLineIn]
+
+
+class ShipmentMultiOut(BaseModel):
+    slip_id: int
+    slip_no: str
+    customer_id: str = ""
+    customer_name: str = ""
+    ship_date: str
+    logistics: str = ""
+    remark: str = ""
+    operator: str = ""
+    line_count: int = 0
+    total_qty: int = 0
+    shipment_ids: list[int] = []
+    approval_status: str = "pending"
+    message: str = ""
 
 
 class ShipmentOut(BaseModel):
@@ -275,13 +371,73 @@ class ShipmentOut(BaseModel):
     qty: int
     ship_date: str
     box_count: int
+    qty_per_box: Optional[int] = 1
     logistics: Optional[str] = None
     remark: Optional[str] = None
     operator: Optional[str] = None
     created_at: datetime
+    slip_id: Optional[int] = None
+    approval_status: Optional[str] = "approved"
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+
+class ShipmentApproveIn(BaseModel):
+    shipment_id: Optional[int] = None
+    slip_id: Optional[int] = None
+
+
+class ShipmentApproveOut(BaseModel):
+    approved_count: int
+    shipment_ids: list[int] = []
+    total_qty: int = 0
+    approver: str = ""
+    message: str = ""
+
+
+class ShipmentRevokeIn(BaseModel):
+    line_key: str = ""
+    shipment_id: Optional[int] = None
+
+
+class ShipmentRevokeOut(BaseModel):
+    id: int
+    shipment_no: str
+    line_key: str
+    purchase_no: str
+    qty: int
+    restored_qty: int
+    ship_date: str
+    message: str = "已撤销出库"
+
+
+class ShipmentBackfillIn(BaseModel):
+    """历史发货补录：追加数量计入累计已发，不计入今日发（不影响生产扫码）。"""
+
+    line_key: str
+    add_qty: Optional[int] = None
+    target_shipped_qty: Optional[int] = None  # 兼容旧：补到目标累计
+    ship_date: Optional[str] = None
+    remark: Optional[str] = None
+    operator: Optional[str] = None
+
+
+class ShipmentBackfillOut(BaseModel):
+    shipment_id: int
+    shipment_no: str
+    line_key: str
+    purchase_no: str = ""
+    added_qty: int
+    target_shipped_qty: int
+    shipped_qty: int
+    pending_qty: int
+    unshipped_qty: int
+    order_qty: int
+    ship_date: str
+    message: str = ""
 
 
 class DashboardStats(BaseModel):
@@ -317,6 +473,8 @@ class ReceiveBoardCustomer(BaseModel):
     this_month_total: float = 0
     last_month_amount: float = 0
     this_month_amount: float = 0
+    this_month_order_qty: float = 0
+    this_month_order_amount: float = 0
     models: List[ReceiveBoardModel] = []
 
 
@@ -403,6 +561,16 @@ class WarehouseMaterialOut(BaseModel):
         from_attributes = True
 
 
+class WarehouseMaterialEnsureIn(BaseModel):
+    """BOM 缺料号点开明细时：无库存账则自动建零库存档案。"""
+
+    customer_id: str
+    material_code: str
+    material_name: Optional[str] = None
+    spec: Optional[str] = None
+    unit: Optional[str] = "PCS"
+
+
 class WarehouseBomModelCandidateOut(BaseModel):
     id: int
     model_code: str
@@ -435,7 +603,7 @@ class WarehouseOpenOrderOut(BaseModel):
 
 
 class FinishedGoodsRowOut(BaseModel):
-    """成品库存（按订单行）。结存 = 订单数量 − 客户收货数 − 入库数。"""
+    """成品发货行。未发完 = 订单数 − 已发货（内部口径）。"""
 
     line_key: str
     customer_id: str = ""
@@ -443,12 +611,16 @@ class FinishedGoodsRowOut(BaseModel):
     purchase_no: str = ""
     model_code: str = ""
     model_name: str = ""
+    product_spec: str = ""
     order_qty: float = 0
     receive_qty: float = 0
     inbound_qty: int = 0
     pending_qty: int = 0
     shipped_qty: int = 0
+    unshipped_qty: int = 0
     balance_qty: float = 0
+    status_label: str = ""
+    expect_arrival_date: str = ""
     is_completed: bool = False
 
 
@@ -854,8 +1026,9 @@ class SubstitutionRuleOut(BaseModel):
     parent_spec: Optional[str] = None
     parent_unit: Optional[str] = None
     parent_attr: Optional[str] = None
+    purchase_no: str = ""
     relation_type: Optional[str] = None
-    sub_code: str
+    sub_code: str = ""
     sub_name: Optional[str] = None
     sub_spec: Optional[str] = None
     sub_unit: Optional[str] = None
@@ -865,6 +1038,7 @@ class SubstitutionRuleOut(BaseModel):
     expiry_date: Optional[str] = None
     qty: Optional[float] = None
     remark: Optional[str] = None
+    confirm_status: str = "confirmed"
     source_type: Optional[str] = None
     source_file: Optional[str] = None
     import_batch_id: Optional[str] = None
@@ -899,8 +1073,9 @@ class SubstitutionPreviewRow(BaseModel):
     comp_unit: Optional[str] = None
     parent_code: str = ""
     parent_name: Optional[str] = None
+    purchase_no: str = ""
     relation_type: Optional[str] = "替代料件"
-    sub_code: str
+    sub_code: str = ""
     sub_name: Optional[str] = None
     sub_spec: Optional[str] = None
     sub_order: Optional[str] = None
@@ -908,6 +1083,8 @@ class SubstitutionPreviewRow(BaseModel):
     expiry_date: Optional[str] = None
     qty: Optional[float] = None
     remark: Optional[str] = None
+    confirm_status: str = "confirmed"
+    board_tag: Optional[str] = None
 
 
 class SubstitutionParseOut(BaseModel):
@@ -919,7 +1096,7 @@ class SubstitutionParseOut(BaseModel):
 
 class SubstitutionImportConfirmIn(BaseModel):
     customer_id: str
-    mode: str = "append"  # append | replace | insert_only
+    mode: str = "add"  # 兼容旧字段，实际一律按订单号新增
     source_type: str = "xlsx"
     source_file: str = ""
     rows: List[SubstitutionPreviewRow]
@@ -943,6 +1120,7 @@ class SubstitutionRuleCreateIn(BaseModel):
     comp_code: str
     sub_code: str
     parent_code: str = ""
+    purchase_no: str = ""
     comp_name: Optional[str] = None
     comp_spec: Optional[str] = None
     comp_unit: Optional[str] = None
@@ -955,12 +1133,14 @@ class SubstitutionRuleCreateIn(BaseModel):
     expiry_date: Optional[str] = None
     qty: Optional[float] = None
     remark: Optional[str] = None
+    confirm_status: str = "confirmed"
 
 
 class SubstitutionRuleUpdateIn(BaseModel):
     comp_code: Optional[str] = None
     sub_code: Optional[str] = None
     parent_code: Optional[str] = None
+    purchase_no: Optional[str] = None
     comp_name: Optional[str] = None
     comp_spec: Optional[str] = None
     comp_unit: Optional[str] = None
@@ -973,6 +1153,13 @@ class SubstitutionRuleUpdateIn(BaseModel):
     expiry_date: Optional[str] = None
     qty: Optional[float] = None
     remark: Optional[str] = None
+    confirm_status: Optional[str] = None
+
+
+class SubstitutionManualConfirmIn(BaseModel):
+    sub_code: str
+    sub_name: Optional[str] = None
+    sub_spec: Optional[str] = None
 
 
 class ProcessMapLineOut(BaseModel):
@@ -1012,7 +1199,10 @@ class ProcessStepDefOut(BaseModel):
 class ProcessStepsIn(BaseModel):
     laser_label: bool = False
     smt: bool = False
+    pre_oven_aoi: bool = False
     insert: bool = False
+    post_solder: bool = False
+    post_oven_label: bool = False
     test: bool = False
     conformal_enabled: bool = False
     conformal_type: str = "普通三防"
@@ -1089,6 +1279,7 @@ class ToolingCatalogOut(BaseModel):
     ict_fct_fixture_registered: bool = False
     registered_count: int = 0
     tooling_complete: bool = False
+    supplier: Optional[str] = None
 
 
 class ToolingLookupOut(BaseModel):
@@ -1106,6 +1297,24 @@ class ToolingSaveIn(BaseModel):
     model_code: str
     model_name: Optional[str] = None
     entries: List[ToolingEntryIn]
+
+
+class ToolingSyncResult(BaseModel):
+    ok: bool = True
+    dry_run: bool = False
+    message: str = ""
+    stencil_file: str = ""
+    fixture_file: str = ""
+    stencil_parsed: int = 0
+    fixture_parsed: int = 0
+    merged_count: int = 0
+    created: int = 0
+    updated: int = 0
+    by_tool_type: dict = {}
+    by_internal_code: dict = {}
+    unmapped_stencil_customers: List[str] = []
+    unmapped_fixture_sheets: List[str] = []
+    samples: List[dict] = []
 
 
 class ProcessRouteSyncResult(BaseModel):
@@ -1360,9 +1569,11 @@ class BomModelListOut(BaseModel):
     bom_model_id: Optional[int] = None
     eng_review_status: str = ""
     eng_review_message: Optional[str] = None
+    mount_profile_override: Optional[str] = None
     order_count: int = 0
     order_qty: float = 0
     latest_purchase_date: Optional[str] = None
+    is_order_completed: bool = False
     is_active: bool = True
     synced_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -1390,6 +1601,10 @@ class BomLineOut(BaseModel):
     is_active: bool = True
     source: str = "import"
     control_id: Optional[int] = None
+    # 本机型/订单下可替料号（供 BOM 明细与发料单展示）
+    substitute_codes: list[str] = []
+    # 替代明细（料号/品名/规格），发料单打印用
+    substitute_details: list[dict] = []
 
     class Config:
         from_attributes = True
@@ -1494,6 +1709,44 @@ class MountReadinessOut(BaseModel):
 
 class EngReviewActionIn(BaseModel):
     message: str = ""
+
+
+class EngIssuePrintMaterialIn(BaseModel):
+    material_code: str = ""
+    material_name: Optional[str] = None
+    spec: Optional[str] = None
+    unit: Optional[str] = None
+    qty_per: float = 0
+    issue_qty: float = 0
+    mount_type: Optional[str] = None
+    mount_side: Optional[str] = None
+    position: Optional[str] = None
+
+
+class EngIssuePrintLogIn(BaseModel):
+    process_filter: str = "SMT"
+    stencil_src: str = ""
+    wave_src: str = ""
+    order_qty: float = 0
+    line_key: str = ""
+    materials: list[EngIssuePrintMaterialIn] = Field(default_factory=list)
+
+
+class EngIssuePrintLogOut(BaseModel):
+    id: int
+    bom_model_id: int
+    internal_code: str = ""
+    model_code: str = ""
+    purchase_no: str = ""
+    line_key: str = ""
+    process_filter: str = ""
+    stencil_src: str = ""
+    wave_src: str = ""
+    operator: str = ""
+    order_qty: float = 0
+    material_count: int = 0
+    material_codes: list[str] = Field(default_factory=list)
+    created_at: Optional[str] = None
 
 
 class EngReviewInboxOut(BaseModel):
@@ -1637,6 +1890,7 @@ class ScheduleReorderIn(BaseModel):
 class ScheduleImportOrderIn(BaseModel):
     line_key: str
     line_type: str
+    to_pool: bool = True  # True=计划池（不卡齐套）；False=直接正式排产（卡齐套）
 
 
 # —— 物料管制 ——

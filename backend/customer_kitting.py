@@ -15,6 +15,7 @@ CUSTOMER_KIT_LABELS = {
     "unkit": "未齐套",
     "partial": "部分齐套",
     "ready": "已齐套",
+    "unbound": "未绑BOM",
     "na": "—",
 }
 
@@ -37,7 +38,34 @@ def ems_material_status_to_kit_status(material_status: Optional[str]) -> str:
         return "ready"
     if material_status == "partial":
         return "partial"
+    if material_status == "unbound":
+        return "unbound"
     return "unkit"
+
+
+def is_order_fulfillment_done(
+    *,
+    order_qty: float = 0,
+    delivery_qty: Optional[float] = None,
+    un_delivery_qty: Optional[float] = None,
+    receive_qty: Optional[float] = None,
+    is_completed: Optional[bool] = None,
+) -> bool:
+    """已结案或交货/收货已盖订单量 → 业务上视为出完，齐套列不再显示未齐套。"""
+    if is_completed:
+        return True
+    qty = float(order_qty or 0)
+    if qty <= 0:
+        return False
+    delivered = float(delivery_qty or 0)
+    if delivered + 1e-6 >= qty:
+        return True
+    received = float(receive_qty or 0)
+    if received + 1e-6 >= qty:
+        return True
+    if un_delivery_qty is not None and delivered > 0 and float(un_delivery_qty) <= 1e-6:
+        return True
+    return False
 
 
 def compute_customer_kit_status(
@@ -45,9 +73,31 @@ def compute_customer_kit_status(
     order_qty: float,
     customer_id: Optional[str] = None,
     material_status: Optional[str] = None,
+    *,
+    fulfillment_done: Optional[bool] = None,
+    delivery_qty: Optional[float] = None,
+    un_delivery_qty: Optional[float] = None,
+    receive_qty: Optional[float] = None,
+    is_completed: Optional[bool] = None,
 ) -> str:
     if not is_customer_kit_tracked(customer_id):
         return "na"
+    done = fulfillment_done
+    if done is None and (
+        delivery_qty is not None
+        or un_delivery_qty is not None
+        or receive_qty is not None
+        or is_completed is not None
+    ):
+        done = is_order_fulfillment_done(
+            order_qty=order_qty,
+            delivery_qty=delivery_qty,
+            un_delivery_qty=un_delivery_qty,
+            receive_qty=receive_qty,
+            is_completed=is_completed,
+        )
+    if done:
+        return "ready"
     if is_customer_kit_ems(customer_id):
         if material_status:
             return ems_material_status_to_kit_status(material_status)
@@ -141,9 +191,32 @@ def apply_ems_material_kitting_state(
         return False
 
     order_qty = float(order.batch_pur_qty or order.output_qty or 0)
+    # 已出完/结案：冻结为已齐套，避免库存被消耗后刷回「未齐套」
+    if is_order_fulfillment_done(
+        order_qty=order_qty,
+        delivery_qty=getattr(order, "delivery_qty", None),
+        un_delivery_qty=getattr(order, "un_delivery_qty", None),
+        receive_qty=getattr(order, "receive_qty", None),
+        is_completed=bool(getattr(order, "is_completed", False)),
+    ):
+        order.material_status = "ready"
+        order.collected_sets_qty = order_qty if order_qty > 0 else float(order.collected_sets_qty or 0)
+        if not order.customer_kitted_at:
+            order.customer_kitted_at = datetime.utcnow()
+        return True
+
     old_qty = float(order.collected_sets_qty or 0)
+    old_status = (order.material_status or "").strip()
     new_qty = ems_kitting_to_collected_sets(kit, order_qty)
     new_status = kit.get("material_status") or "unknown"
+
+    # 曾齐套后不因库存回落改成欠料（生产领料后常见）
+    if old_status == "ready" and new_status != "ready":
+        order.collected_sets_qty = max(old_qty, new_qty, order_qty if order_qty > 0 else 0)
+        order.material_status = "ready"
+        if not order.customer_kitted_at:
+            order.customer_kitted_at = datetime.utcnow()
+        return True
 
     order.material_status = new_status
     order.collected_sets_qty = new_qty
@@ -234,6 +307,12 @@ def save_synced_order(
     order_data.pop("internal_wo_no", None)
     # tax_price 仅用于单价缓存，非 SrmOrder 列
     tax_price = order_data.pop("tax_price", None)
+    try:
+        from order_biz_kind import apply_biz_kind
+
+        apply_biz_kind(order_data)
+    except Exception:
+        order_data.setdefault("biz_kind", "processing")
     if existing:
         for key, value in order_data.items():
             if key in ("remark", "is_controlled", "internal_wo_no"):

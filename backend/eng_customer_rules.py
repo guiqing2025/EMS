@@ -84,7 +84,8 @@ BUILTIN_CUSTOMER_RULES: dict[str, dict[str, Any]] = {
         },
     },
     "A067": {
-        "model_key_regex": r"^(91\.\d{4}\.\d+|03\.\d{2}\.\d+|69\.\d{2}\.\d+)",
+        # 不含 69.xx：该段多为钢网/治具等费用料，不进工程机型
+        "model_key_regex": r"^(91\.\d{4}\.\d+|03\.\d{2}\.\d+)",
         "bom_parse_profile": "yonglian",
         "checklist": {
             "bom": True,
@@ -204,6 +205,47 @@ def workflow_for(internal_code: str) -> dict[str, bool]:
         # 默认开启：齐套且文件审核无失败时自动通过
         "auto_approve": bool(raw.get("auto_approve", True)),
     }
+
+
+# 费用类订单：不进入工程资料导入（各客户叫法不同，统一在此判定）
+FEE_ORDER_TYPE_NAMES = frozenset({"一般订单", "费用采购", "费用订单"})
+FEE_ORDER_TYPE_KEYWORDS = ("费用",)
+FEE_PRODUCT_NAME_KEYWORDS = ("钢网", "治具", "工装", "夹具")
+# 永联常见费用料号段（钢网/治具等）
+YONGLIAN_FEE_MATERIAL_PREFIXES = ("69.", "91.9003.")
+
+
+def is_engineering_fee_order(
+    *,
+    internal_code: str = "",
+    customer_id: str = "",
+    order_type_name: Optional[str] = None,
+    product_goods_no: Optional[str] = None,
+    product_goods_name: Optional[str] = None,
+) -> bool:
+    """费用类订单行（钢网/治具/工装等）不需工程 BOM/坐标/Gerber 导入。
+
+    - 恩玖：订单类型「一般订单」
+    - 永联：品名含钢网/治具/工装，或料号 69.* / 91.9003.*
+    - 通用：订单类型名含「费用」，或品名命中费用关键词
+    """
+    ot = (order_type_name or "").strip()
+    if ot in FEE_ORDER_TYPE_NAMES:
+        return True
+    if any(k in ot for k in FEE_ORDER_TYPE_KEYWORDS):
+        return True
+
+    name = (product_goods_name or "").strip()
+    if any(k in name for k in FEE_PRODUCT_NAME_KEYWORDS):
+        return True
+
+    code = (product_goods_no or "").strip()
+    ic = (internal_code or "").strip().upper()
+    cid = (customer_id or "").strip().lower()
+    is_yonglian = ic == "A067" or cid == "yonglian" or "永联" in cid
+    if is_yonglian and any(code.startswith(p) for p in YONGLIAN_FEE_MATERIAL_PREFIXES):
+        return True
+    return False
 
 
 def mount_extra_patterns(internal_code: str) -> dict[str, list[str]]:

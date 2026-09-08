@@ -16,6 +16,10 @@ export interface ReceiveBoardCustomer {
   this_month_total: number
   last_month_amount: number
   this_month_amount: number
+  /** 当月接单数量（采购日在本月） */
+  this_month_order_qty?: number
+  /** 当月接单含税金额 */
+  this_month_order_amount?: number
   models: ReceiveBoardModel[]
 }
 

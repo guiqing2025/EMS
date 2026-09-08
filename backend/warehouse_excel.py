@@ -61,15 +61,26 @@ def resolve_share_dir() -> Path:
 
 
 SKIP_FOLDERS = {"超领单", "仓库过往资料"}
-CUSTOMER_DIR_NAMES = {"亿维艾", "能系科技"}
+
+# 仅同步这 8 个客户文件夹（与共享盘目录名一致）
+ALLOWED_CUSTOMER_FOLDERS = frozenset(
+    {
+        "恩玖进销表",
+        "菲利斯进销表",
+        "华夏恒泰进销表",
+        "能系科技",
+        "亿兰科进销表",
+        "亿维艾",
+        "永联发料单",
+        "源信进销表",
+    }
+)
 
 
 def _is_customer_folder(name: str) -> bool:
-    if name in SKIP_FOLDERS:
+    if name in SKIP_FOLDERS or name.startswith("."):
         return False
-    if name in CUSTOMER_DIR_NAMES:
-        return True
-    return name.endswith("进销表") or name.endswith("发料单")
+    return name in ALLOWED_CUSTOMER_FOLDERS
 
 
 def _match_customer(folder_name: str) -> tuple[str, str]:
@@ -77,6 +88,7 @@ def _match_customer(folder_name: str) -> tuple[str, str]:
     aliases = {
         "菲利斯进销表": ("feilisi", "菲利斯"),
         "恩玖进销表": ("enjiu", "恩玖·鼎雄"),
+        "华夏恒泰进销表": ("wh_huaxia", "华夏恒泰"),
         "永联发料单": ("yonglian", "永联"),
         "源信进销表": ("wh_yuanxin", "源信"),
         "亿兰科进销表": ("wh_yilanke", "亿兰科"),
@@ -89,11 +101,6 @@ def _match_customer(folder_name: str) -> tuple[str, str]:
         if customer:
             return cid, customer.get("name") or cname
         return cid, cname
-    for customer in load_config().get("customers", []):
-        cname = customer.get("name") or ""
-        short = name.replace("进销表", "").replace("发料单", "")
-        if short and (short in cname or cname in name):
-            return customer["id"], cname
     short = re.sub(r"(进销表|发料单)$", "", name)
     return f"wh_{short}", short or name
 
@@ -145,10 +152,11 @@ def _float_cell(row: tuple, mapping: dict[str, int], *names: str) -> Optional[fl
 
 
 def _parse_inventory_rows(ws) -> list[dict]:
+    """只取库存表：物料编号 + 实际库存（数）。"""
     rows = list(ws.iter_rows(values_only=True))
     header_idx = None
     header_map: dict[str, int] = {}
-    for idx, row in enumerate(rows[:10]):
+    for idx, row in enumerate(rows[:20]):
         if not row:
             continue
         cells = [str(c).strip() if c is not None else "" for c in row]
@@ -157,7 +165,9 @@ def _parse_inventory_rows(ws) -> list[dict]:
             header_map = _header_map(row)
             break
     if header_idx is None:
-        return []
+        raise ValueError("库存表未找到「物料编号/物料编码」表头")
+    if "实际库存数" not in header_map and "实际库存" not in header_map:
+        raise ValueError("库存表缺少「实际库存」或「实际库存数」列")
 
     items: list[dict] = []
     for row in rows[header_idx + 1 :]:
@@ -167,18 +177,18 @@ def _parse_inventory_rows(ws) -> list[dict]:
         code = str(code or "").strip()
         if not code or code in ("物料编号", "物料编码"):
             continue
-        count_qty = _float_cell(row, header_map, "盘点数") or 0.0
-        in_qty = _float_cell(row, header_map, "来料数") or 0.0
-        stock_qty = count_qty + in_qty
+        actual = _float_cell(row, header_map, "实际库存数", "实际库存")
+        if actual is None:
+            actual = 0.0
         items.append(
             {
                 "material_code": code,
                 "material_name": str(_cell(row, header_map, "物料名称") or "").strip(),
                 "spec": str(_cell(row, header_map, "规格型号") or "").strip(),
                 "unit": "PCS",
-                "opening_qty": stock_qty,
-                "excel_count_qty": count_qty,
-                "excel_in_qty": in_qty,
+                "opening_qty": actual,
+                "excel_count_qty": actual,
+                "excel_in_qty": None,
                 "excel_demand_qty": _float_cell(row, header_map, "需求数"),
                 "remark": "",
             }
@@ -254,6 +264,7 @@ def upsert_material(
         row.excel_synced_at = datetime.utcnow()
     opening = float(item.get("opening_qty") or 0)
     if created:
+        # 新建料号时可用共享盘期初；已有料号的 qty 一律以系统录入为准，禁止同步覆盖
         row.qty = opening
         if opening > 0:
             db.flush()
@@ -268,8 +279,7 @@ def upsert_material(
                 remark=f"共享盘首次同步 · {customer_name}",
                 ref_no=f"SYNC-{customer_id}-{item['material_code'][:20]}",
             )
-    elif sync_stock:
-        row.qty = opening
+    # sync_stock 仅更新 excel_* 参考字段，不再改 row.qty（避免冲掉系统进账）
     row.updated_at = datetime.utcnow()
     return created, row
 
@@ -331,24 +341,23 @@ def _consolidate_substitute_inventory(items: list[dict]) -> list[dict]:
 
 
 def import_workbook(db: Session, file_path: Path, customer_id: str, customer_name: str) -> ExcelImportLog:
+    """只同步库存表「实际库存」到 warehouse_materials；不跑进出账全量扫描。"""
     imported = updated = 0
     try:
         wb = load_workbook(file_path, read_only=True, data_only=True)
         try:
-            use_inventory_sheet = INVENTORY_SHEET in wb.sheetnames
-            if use_inventory_sheet:
-                ws = wb[INVENTORY_SHEET]
-                items = _parse_inventory_rows(ws)
-            else:
-                ws = wb[SHEET_NAME] if SHEET_NAME in wb.sheetnames else wb.active
-                items = _parse_template_rows(ws)
+            if INVENTORY_SHEET not in wb.sheetnames:
+                raise ValueError(f"缺少「{INVENTORY_SHEET}」工作表")
+            ws = wb[INVENTORY_SHEET]
+            items = _parse_inventory_rows(ws)
+            items = _consolidate_substitute_inventory(items)
             for item in items:
                 created, _ = upsert_material(
                     db,
                     customer_id,
                     customer_name,
                     item,
-                    sync_stock=use_inventory_sheet,
+                    sync_stock=True,
                 )
                 if created:
                     imported += 1
@@ -357,43 +366,7 @@ def import_workbook(db: Session, file_path: Path, customer_id: str, customer_nam
         finally:
             wb.close()
 
-        movement_stats = None
-        if use_inventory_sheet:
-            from warehouse_movements import sync_movements_from_workbook
-
-            # 进出账要扫多个 sheet：单独以非 read_only 打开，避免迭代冲突
-            wb_mv = load_workbook(file_path, read_only=False, data_only=True)
-            try:
-                movement_stats = _retry_db_locked(
-                    db,
-                    lambda: sync_movements_from_workbook(
-                        db, wb_mv, customer_id, customer_name, str(file_path)
-                    ),
-                )
-            finally:
-                wb_mv.close()
-
-        snap_stats = None
-        from warehouse_excel_snapshot import archive_workbook_snapshot_from_path
-
-        snap_stats = _retry_db_locked(
-            db,
-            lambda: archive_workbook_snapshot_from_path(
-                db, file_path, customer_id, customer_name
-            ),
-        )
-
-        msg = f"读取 {len(items)} 行，新增 {imported}，更新 {updated}"
-        if movement_stats:
-            parts = [f"进出账 {movement_stats['total']} 条"]
-            from warehouse_movements import MOVEMENT_LABELS
-            for mtype, label in MOVEMENT_LABELS.items():
-                n = movement_stats.get(mtype, 0)
-                if n:
-                    parts.append(f"{label} {n}")
-            msg += "；" + " / ".join(parts)
-        if snap_stats:
-            msg += f"；原文归档 {snap_stats['sheet_count']} 个表 / {snap_stats['total_cells']} 格"
+        msg = f"库存表实际库存：读取 {len(items)} 行，新增 {imported}，更新 {updated}"
         log = ExcelImportLog(
             source_file=str(file_path),
             customer_name=customer_name,
@@ -408,10 +381,11 @@ def import_workbook(db: Session, file_path: Path, customer_id: str, customer_nam
             db.rollback()
         except Exception:
             pass
-        # 对用户可读：锁冲突时给明确提示
         msg = str(exc)
         if "database is locked" in msg.lower() or "locked" in msg.lower():
             msg = "数据库正忙（可能 ICT/AOI 同步中），请稍后再点「从共享盘导入」"
+        elif "UNIQUE constraint failed: warehouse_movements.dedupe_key" in msg:
+            msg = "进出账重复键冲突（换月文件与旧流水撞车），请重试；若仍失败请联系管理员"
         log = ExcelImportLog(
             source_file=str(file_path),
             customer_name=customer_name,
@@ -489,6 +463,14 @@ def sync_all_from_share(db: Session) -> tuple[list[ExcelImportLog], str]:
 
     ok = sum(1 for log in logs if log.status == "success")
     summary = f"已从 {share_dir} 同步 {ok}/{len(logs)} 个客户文件"
+    failed = [log for log in logs if log.status != "success"]
+    if failed:
+        names = "、".join((log.customer_name or "?") for log in failed[:5])
+        more = f"等{len(failed)}个" if len(failed) > 5 else ""
+        tip = (failed[0].message or "")[:80]
+        summary += f"；失败：{names}{more}"
+        if tip:
+            summary += f"（例：{tip}）"
     return logs, summary
 
 

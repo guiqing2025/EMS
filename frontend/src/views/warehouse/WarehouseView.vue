@@ -13,7 +13,6 @@
           <el-button type="primary" @click="batchInboundOpen = true">批量来料</el-button>
           <el-button type="primary" plain @click="batchIssueOpen = true">按订单发料</el-button>
           <el-button @click="downloadWarehouseTemplate">下载模板</el-button>
-          <el-button :loading="syncing" @click="onSyncShare">从共享盘导入</el-button>
           <el-button @click="exportWarehouseInventory">导出库存</el-button>
         </div>
       </div>
@@ -98,7 +97,7 @@
             下表为该客户在制订单；点击一行可展开 BOM 用料与当前库存齐料明细。
           </template>
           <template v-else-if="viewMode === 'model'">
-            下表为该订单已确认 BOM 的用料及当前库存；点击有库存账的行可查看单物料明细。
+            下表为该订单已确认 BOM 的用料及当前库存；点击料号行可查看单物料明细（无库存账时自动建零库存档案）。
           </template>
           <template v-else>
             输入机型号可按在制订单展开 BOM 用料（同机型不同订单需分开选）；也可按料号/品名查询。
@@ -277,6 +276,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   downloadWarehouseTemplate,
+  ensureWarehouseMaterial,
   exportWarehouseInventory,
   fetchMaterials,
   fetchMaterialsByModel,
@@ -588,12 +588,36 @@ function onMaterialRowClick(row: WarehouseMaterial) {
   detailOpen.value = true
 }
 
-function onModelRowClick(row: WarehouseModelMaterialLine) {
-  if (!row.material_id) {
-    ElMessage.info('仓库中尚无该料号库存账，无法打开明细')
-    return
+async function onModelRowClick(row: WarehouseModelMaterialLine) {
+  let mid = row.material_id
+  if (!mid) {
+    const cid = (modelInfo.value?.customer_id || customerId.value || '').trim()
+    if (!cid) {
+      ElMessage.warning('请先选择客户后再打开明细')
+      return
+    }
+    const code = (row.material_code || '').trim()
+    if (!code) {
+      ElMessage.warning('料号为空，无法建档')
+      return
+    }
+    try {
+      const mat = await ensureWarehouseMaterial({
+        customer_id: cid,
+        material_code: code,
+        material_name: row.material_name || undefined,
+        spec: row.spec || undefined,
+        unit: row.unit || 'PCS',
+      })
+      mid = mat.id
+      row.material_id = mat.id
+      ElMessage.success(`已为 ${code} 建立零库存档案`)
+    } catch (e) {
+      ElMessage.error(e instanceof Error ? e.message : '建档失败')
+      return
+    }
   }
-  detailMaterialId.value = row.material_id
+  detailMaterialId.value = mid
   detailOpen.value = true
 }
 

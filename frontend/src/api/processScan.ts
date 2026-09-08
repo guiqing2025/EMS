@@ -36,12 +36,26 @@ export async function submitProcessScan(payload: {
   station: ProcessStation
   barcode: string
   purchase_no?: string
+  model_code?: string
   operator?: string
 }) {
   return apiFetch<ProcessScanResult>('/process-scan/scan', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+/** 补全历史缺机型扫码，刷新后订单列表数量可回显 */
+export async function backfillProcessScanModels(limit = 50000) {
+  const q = new URLSearchParams({ limit: String(limit) })
+  return apiFetch<{
+    status: string
+    laser_scanned: number
+    laser_fixed: number
+    order_scanned: number
+    order_filled: number
+    order_skipped_multi_model: number
+  }>(`/process-scan/backfill-model?${q}`, { method: 'POST' })
 }
 
 export async function fetchProcessScans(

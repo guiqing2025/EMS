@@ -587,6 +587,8 @@ def migrate():
         user_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
         if user_cols and "must_change_password" not in user_cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0"))
+        if user_cols and "module_perms" not in user_cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN module_perms TEXT"))
 
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS warehouse_movements (
@@ -939,6 +941,14 @@ def migrate():
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_laser_batches_purchase_no ON laser_batches (purchase_no)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_laser_batches_laser_date ON laser_batches (laser_date)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_laser_batches_model_mid ON laser_batches (model_mid)"))
+        laser_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(laser_batches)"))}
+        if "barcode_prefix" not in laser_cols:
+            conn.execute(text("ALTER TABLE laser_batches ADD COLUMN barcode_prefix VARCHAR(16)"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_laser_batches_barcode_prefix ON laser_batches (barcode_prefix)"
+                )
+            )
         conn.execute(
             text(
                 """
@@ -1156,6 +1166,26 @@ def migrate():
                 conn.execute(
                     text("ALTER TABLE substitution_rules ADD COLUMN import_batch_id VARCHAR(64)")
                 )
+            if "purchase_no" not in sub_rule_cols:
+                conn.execute(
+                    text("ALTER TABLE substitution_rules ADD COLUMN purchase_no VARCHAR(64) DEFAULT ''")
+                )
+                conn.execute(
+                    text("UPDATE substitution_rules SET purchase_no = '' WHERE purchase_no IS NULL")
+                )
+            if "confirm_status" not in sub_rule_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE substitution_rules ADD COLUMN confirm_status "
+                        "VARCHAR(16) DEFAULT 'confirmed'"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "UPDATE substitution_rules SET confirm_status = 'confirmed' "
+                        "WHERE confirm_status IS NULL OR confirm_status = ''"
+                    )
+                )
             conn.execute(
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_substitution_rules_customer_id "
@@ -1166,6 +1196,18 @@ def migrate():
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_substitution_rules_import_batch "
                     "ON substitution_rules (import_batch_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_substitution_rules_purchase_no "
+                    "ON substitution_rules (purchase_no)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_substitution_rules_confirm_status "
+                    "ON substitution_rules (confirm_status)"
                 )
             )
 
@@ -1356,6 +1398,812 @@ def migrate():
                 )
             )
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_aoi_sync_files_machine_id ON aoi_sync_files (machine_id)"))
+
+        # 订单业务类型：加工 / 费用（钢网治具等）
+        order_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(srm_orders)")).fetchall()}
+        if "biz_kind" not in order_cols:
+            conn.execute(
+                text("ALTER TABLE srm_orders ADD COLUMN biz_kind VARCHAR(16) DEFAULT 'processing'")
+            )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_srm_orders_biz_kind ON srm_orders (biz_kind)")
+        )
+        conn.execute(
+            text("UPDATE srm_orders SET biz_kind = 'processing' WHERE biz_kind IS NULL OR biz_kind = ''")
+        )
+        expense_like = (
+            "钢网",
+            "治具",
+            "测试工装",
+            "波峰治具",
+            "ICT工装",
+            "FCT工装",
+            "测试架",
+        )
+        for kw in expense_like:
+            conn.execute(
+                text(
+                    """
+                    UPDATE srm_orders
+                    SET biz_kind = 'expense'
+                    WHERE (product_goods_name LIKE :pat OR IFNULL(product_spec, '') LIKE :pat)
+                    """
+                ),
+                {"pat": f"%{kw}%"},
+            )
+        conn.execute(
+            text(
+                """
+                UPDATE srm_orders
+                SET biz_kind = 'expense'
+                WHERE customer_id IN ('enjiu', 'a116')
+                  AND purchase_no LIKE '3501-%'
+                  AND (
+                    product_goods_no LIKE '9908%'
+                    OR product_goods_no LIKE '9909%'
+                  )
+                """
+            )
+        )
+        # 打样/贴片加工单规格里常写「钢网费」「治具费」，上面关键字会误标成费用单；拉回加工单
+        processing_like = ("打样", "贴片", "插件", "加工费", "制成板", "PCBA", "PCB板")
+        hint_sql = " OR ".join(
+            [
+                f"(IFNULL(product_goods_name,'') LIKE :h{i} OR IFNULL(product_spec,'') LIKE :h{i})"
+                for i in range(len(processing_like))
+            ]
+        )
+        hint_params = {f"h{i}": f"%{kw}%" for i, kw in enumerate(processing_like)}
+        conn.execute(
+            text(
+                f"""
+                UPDATE srm_orders
+                SET biz_kind = 'processing'
+                WHERE biz_kind = 'expense'
+                  AND IFNULL(product_goods_no, '') != ''
+                  AND product_goods_no NOT LIKE '9908%'
+                  AND product_goods_no NOT LIKE '9909%'
+                  AND ({hint_sql})
+                """
+            ),
+            hint_params,
+        )
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS production_master_plans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sort_order INTEGER DEFAULT 0,
+                line_key VARCHAR(128),
+                customer_id VARCHAR(64),
+                customer_name VARCHAR(128),
+                purchase_no VARCHAR(64),
+                model_code VARCHAR(128),
+                order_qty FLOAT DEFAULT 0,
+                customer_due_date VARCHAR(32),
+                material_prep_date VARCHAR(32),
+                smt_online_date VARCHAR(32),
+                dip_online_date VARCHAR(32),
+                order_status VARCHAR(128),
+                remark VARCHAR(256),
+                updated_by VARCHAR(64),
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_production_master_plans_sort "
+            "ON production_master_plans (sort_order, id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_production_master_plans_line_key "
+            "ON production_master_plans (line_key)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_production_master_plans_purchase_no "
+            "ON production_master_plans (purchase_no)"
+        ))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS aoi_qc_overrides (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                barcode VARCHAR(64) NOT NULL,
+                prev_result VARCHAR(16) NOT NULL,
+                new_result VARCHAR(16) DEFAULT 'PASS',
+                prev_machine VARCHAR(64),
+                prev_source_file VARCHAR(256),
+                prev_tested_at DATETIME,
+                purchase_no VARCHAR(64),
+                model_code VARCHAR(64),
+                reason VARCHAR(256) NOT NULL,
+                remark VARCHAR(512),
+                operator VARCHAR(64) NOT NULL,
+                operator_role VARCHAR(32),
+                storage VARCHAR(16) DEFAULT 'hot',
+                created_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_aoi_qc_overrides_barcode "
+            "ON aoi_qc_overrides (barcode)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_aoi_qc_overrides_created "
+            "ON aoi_qc_overrides (created_at)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_aoi_qc_overrides_operator "
+            "ON aoi_qc_overrides (operator)"
+        ))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS process_defect_import_batches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename VARCHAR(256) NOT NULL,
+                operator VARCHAR(64) NOT NULL,
+                row_count INTEGER DEFAULT 0,
+                customers VARCHAR(256),
+                year_months VARCHAR(128),
+                replaced_rows INTEGER DEFAULT 0,
+                imported_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_process_defect_batches_imported "
+            "ON process_defect_import_batches (imported_at)"
+        ))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS process_defect_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id INTEGER NOT NULL,
+                seq_no VARCHAR(32),
+                report_no VARCHAR(64),
+                defect_date DATETIME,
+                year_month VARCHAR(7) DEFAULT '',
+                customer_project VARCHAR(64) DEFAULT '',
+                model_code VARCHAR(128) DEFAULT '',
+                ref_des VARCHAR(64),
+                defect_type VARCHAR(64),
+                phenomenon VARCHAR(128) DEFAULT '',
+                phenomenon_norm VARCHAR(128) DEFAULT '',
+                qty FLOAT DEFAULT 0,
+                remark VARCHAR(512),
+                station VARCHAR(32) DEFAULT '',
+                inspect_qty FLOAT,
+                defect_qty FLOAT,
+                good_qty FLOAT,
+                defect_rate FLOAT,
+                close_status VARCHAR(32),
+                created_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_process_defect_ym_cust "
+            "ON process_defect_records (year_month, customer_project)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_process_defect_station "
+            "ON process_defect_records (station)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_process_defect_model "
+            "ON process_defect_records (model_code)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_process_defect_phen "
+            "ON process_defect_records (phenomenon_norm)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_process_defect_batch "
+            "ON process_defect_records (batch_id)"
+        ))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS complaint_import_batches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename VARCHAR(256) NOT NULL,
+                operator VARCHAR(64) NOT NULL,
+                customer VARCHAR(64) DEFAULT '',
+                row_count INTEGER DEFAULT 0,
+                image_count INTEGER DEFAULT 0,
+                year_months VARCHAR(128),
+                replaced_rows INTEGER DEFAULT 0,
+                imported_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_complaint_batches_imported "
+            "ON complaint_import_batches (imported_at)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_complaint_batches_customer "
+            "ON complaint_import_batches (customer)"
+        ))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS complaint_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id INTEGER NOT NULL,
+                customer VARCHAR(64) DEFAULT '',
+                sheet_name VARCHAR(128),
+                complaint_date DATETIME,
+                year_month VARCHAR(7) DEFAULT '',
+                model_code VARCHAR(128) DEFAULT '',
+                barcode VARCHAR(64),
+                pcba_code VARCHAR(128),
+                station VARCHAR(64) DEFAULT '',
+                ref_des VARCHAR(128),
+                phenomenon VARCHAR(128) DEFAULT '',
+                phenomenon_norm VARCHAR(128) DEFAULT '',
+                category VARCHAR(64),
+                qty FLOAT DEFAULT 1,
+                dept VARCHAR(64),
+                analysis TEXT,
+                action TEXT,
+                status VARCHAR(32) DEFAULT 'open',
+                created_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_complaint_ym_cust "
+            "ON complaint_records (year_month, customer)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_complaint_station "
+            "ON complaint_records (station)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_complaint_model "
+            "ON complaint_records (model_code)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_complaint_phen "
+            "ON complaint_records (phenomenon_norm)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_complaint_batch "
+            "ON complaint_records (batch_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_complaint_dept "
+            "ON complaint_records (dept)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_complaint_barcode "
+            "ON complaint_records (barcode)"
+        ))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS complaint_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                record_id INTEGER NOT NULL,
+                batch_id INTEGER NOT NULL,
+                rel_path VARCHAR(512) NOT NULL,
+                content_type VARCHAR(64) DEFAULT 'image/jpeg',
+                sort_no INTEGER DEFAULT 0,
+                created_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_complaint_images_record "
+            "ON complaint_images (record_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_complaint_images_batch "
+            "ON complaint_images (batch_id)"
+        ))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS ops_audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action VARCHAR(64) NOT NULL,
+                actor VARCHAR(64),
+                target_type VARCHAR(64),
+                target_id VARCHAR(128),
+                detail_json TEXT,
+                created_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ops_audit_action ON ops_audit_logs (action)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ops_audit_created ON ops_audit_logs (created_at)"
+        ))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS dip_first_article_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                line_key VARCHAR(128) NOT NULL,
+                purchase_no VARCHAR(64) DEFAULT '',
+                model_code VARCHAR(128) DEFAULT '',
+                customer_name VARCHAR(128) DEFAULT '',
+                bom_model_id INTEGER,
+                status VARCHAR(24) DEFAULT 'in_progress',
+                operator VARCHAR(64) DEFAULT '',
+                board_image_rel VARCHAR(512),
+                board_image_content_type VARCHAR(64) DEFAULT 'image/jpeg',
+                remark VARCHAR(512),
+                created_at DATETIME,
+                completed_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_dip_fai_sess_line ON dip_first_article_sessions (line_key)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_dip_fai_sess_pn ON dip_first_article_sessions (purchase_no)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_dip_fai_sess_status ON dip_first_article_sessions (status)"
+        ))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS dip_first_article_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                bom_line_id INTEGER,
+                seq VARCHAR(16),
+                material_code VARCHAR(128) NOT NULL,
+                material_name VARCHAR(256),
+                spec VARCHAR(512),
+                position VARCHAR(512),
+                qty_per FLOAT DEFAULT 1,
+                process VARCHAR(128),
+                mount_type VARCHAR(16) DEFAULT 'DIP',
+                status VARCHAR(16) DEFAULT 'pending',
+                ocr_text TEXT,
+                recognized_code VARCHAR(128),
+                verify_method VARCHAR(16),
+                material_image_rel VARCHAR(512),
+                verified_by VARCHAR(64),
+                verified_at DATETIME,
+                sort_no INTEGER DEFAULT 0
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_dip_fai_line_sess ON dip_first_article_lines (session_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_dip_fai_line_code ON dip_first_article_lines (material_code)"
+        ))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS smt_ipqc_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                line_key VARCHAR(128) NOT NULL,
+                purchase_no VARCHAR(64) DEFAULT '',
+                model_code VARCHAR(128) DEFAULT '',
+                customer_name VARCHAR(128) DEFAULT '',
+                bom_model_id INTEGER,
+                status VARCHAR(24) DEFAULT 'in_progress',
+                operator VARCHAR(64) DEFAULT '',
+                remark VARCHAR(512),
+                created_at DATETIME,
+                completed_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_smt_ipqc_sess_line ON smt_ipqc_sessions (line_key)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_smt_ipqc_sess_pn ON smt_ipqc_sessions (purchase_no)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_smt_ipqc_sess_status ON smt_ipqc_sessions (status)"
+        ))
+
+        # SMT 巡检按 A/B 面分会话
+        smt_sess_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(smt_ipqc_sessions)"))
+        } if conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='smt_ipqc_sessions' LIMIT 1")
+        ).fetchone() else set()
+        if smt_sess_cols and "inspect_side" not in smt_sess_cols:
+            conn.execute(text("ALTER TABLE smt_ipqc_sessions ADD COLUMN inspect_side VARCHAR(8) DEFAULT ''"))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_smt_ipqc_sess_side ON smt_ipqc_sessions (inspect_side)"
+            ))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS smt_ipqc_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                bom_line_id INTEGER,
+                seq VARCHAR(16),
+                material_code VARCHAR(128) NOT NULL,
+                material_name VARCHAR(256),
+                spec VARCHAR(512),
+                position VARCHAR(512),
+                qty_per FLOAT DEFAULT 1,
+                process VARCHAR(128),
+                mount_type VARCHAR(16) DEFAULT 'SMT',
+                status VARCHAR(16) DEFAULT 'pending',
+                ocr_text TEXT,
+                recognized_code VARCHAR(128),
+                verify_method VARCHAR(16),
+                material_image_rel VARCHAR(512),
+                verified_by VARCHAR(64),
+                verified_at DATETIME,
+                sort_no INTEGER DEFAULT 0
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_smt_ipqc_line_sess ON smt_ipqc_lines (session_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_smt_ipqc_line_code ON smt_ipqc_lines (material_code)"
+        ))
+
+        # AOI 不良位号/现象（维修改判展示）
+        aoi_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(aoi_board_results)"))}
+        if "defect_summary" not in aoi_cols:
+            conn.execute(text("ALTER TABLE aoi_board_results ADD COLUMN defect_summary VARCHAR(512)"))
+        if "defect_detail" not in aoi_cols:
+            conn.execute(text("ALTER TABLE aoi_board_results ADD COLUMN defect_detail TEXT"))
+        arch = conn.execute(
+            text(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='aoi_board_results_archive' LIMIT 1"
+            )
+        ).fetchone()
+        if arch:
+            arch_cols = {
+                row[1] for row in conn.execute(text("PRAGMA table_info(aoi_board_results_archive)"))
+            }
+            if "defect_summary" not in arch_cols:
+                conn.execute(
+                    text("ALTER TABLE aoi_board_results_archive ADD COLUMN defect_summary VARCHAR(512)")
+                )
+            if "defect_detail" not in arch_cols:
+                conn.execute(text("ALTER TABLE aoi_board_results_archive ADD COLUMN defect_detail TEXT"))
+
+        # 炉前 AOI（mes_data，只读展示，不进 SMT-AOI 卡控）
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pre_oven_aoi_board_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                barcode VARCHAR(64) NOT NULL UNIQUE,
+                model_mid VARCHAR(16),
+                model_ver VARCHAR(8),
+                laser_date VARCHAR(8),
+                seq INTEGER,
+                model_code VARCHAR(64),
+                product_name VARCHAR(128),
+                side VARCHAR(8),
+                result VARCHAR(16) DEFAULT 'UNKNOWN',
+                machine VARCHAR(64),
+                tested_at DATETIME,
+                source_file VARCHAR(256),
+                purchase_no VARCHAR(64),
+                customer_id VARCHAR(64),
+                laser_batch_id INTEGER,
+                synced_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_pre_oven_aoi_purchase ON pre_oven_aoi_board_results (purchase_no)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_pre_oven_aoi_barcode ON pre_oven_aoi_board_results (barcode)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_pre_oven_aoi_model ON pre_oven_aoi_board_results (model_code)"
+        ))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pre_oven_aoi_sync_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                machine_id VARCHAR(32) DEFAULT 'pre-oven-aoi',
+                filename VARCHAR(256),
+                file_mtime FLOAT,
+                file_size INTEGER,
+                row_count INTEGER DEFAULT 0,
+                processed_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_pre_oven_aoi_sync_fn ON pre_oven_aoi_sync_files (machine_id, filename)"
+        ))
+        po_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(pre_oven_aoi_board_results)"))
+        }
+        if "fail_summary" not in po_cols:
+            conn.execute(text("ALTER TABLE pre_oven_aoi_board_results ADD COLUMN fail_summary TEXT"))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pre_oven_aoi_qc_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                barcode VARCHAR(64) NOT NULL,
+                action VARCHAR(16) NOT NULL,
+                prev_result VARCHAR(16) NOT NULL,
+                fail_summary TEXT,
+                prev_machine VARCHAR(64),
+                prev_source_file VARCHAR(256),
+                prev_tested_at DATETIME,
+                purchase_no VARCHAR(64),
+                model_code VARCHAR(64),
+                reason VARCHAR(256),
+                remark VARCHAR(512),
+                operator VARCHAR(64) NOT NULL,
+                operator_role VARCHAR(32),
+                created_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_pre_oven_qc_barcode ON pre_oven_aoi_qc_records (barcode)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_pre_oven_qc_action ON pre_oven_aoi_qc_records (action)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_pre_oven_qc_created ON pre_oven_aoi_qc_records (created_at)"
+        ))
+
+        # SMT 站位表（共享盘只读；供巡检与 BOM 联合核对，不进扫码卡控）
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS smt_station_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rel_path VARCHAR(512) NOT NULL UNIQUE,
+                folder_name VARCHAR(256) DEFAULT '',
+                filename VARCHAR(256) DEFAULT '',
+                model_code VARCHAR(128) DEFAULT '',
+                purchase_no VARCHAR(64) DEFAULT '',
+                side VARCHAR(16) DEFAULT '',
+                program_name VARCHAR(256) DEFAULT '',
+                machine_area VARCHAR(64) DEFAULT '',
+                file_mtime FLOAT,
+                file_size INTEGER,
+                row_count INTEGER DEFAULT 0,
+                source_path VARCHAR(512) DEFAULT '',
+                is_active INTEGER DEFAULT 1,
+                created_at DATETIME,
+                synced_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_smt_station_files_po ON smt_station_files (purchase_no)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_smt_station_files_model ON smt_station_files (model_code)"
+        ))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS smt_station_rows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_id INTEGER NOT NULL,
+                model_code VARCHAR(128) DEFAULT '',
+                purchase_no VARCHAR(64) DEFAULT '',
+                side VARCHAR(16) DEFAULT '',
+                machine_id VARCHAR(64) DEFAULT '',
+                station_no VARCHAR(64) DEFAULT '',
+                feeder VARCHAR(64) DEFAULT '',
+                material_name VARCHAR(256) DEFAULT '',
+                material_spec VARCHAR(256) DEFAULT '',
+                positions VARCHAR(1024) DEFAULT '',
+                qty FLOAT DEFAULT 0,
+                remark VARCHAR(256) DEFAULT '',
+                sort_no INTEGER DEFAULT 0,
+                synced_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_smt_station_rows_file ON smt_station_rows (file_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_smt_station_rows_spec ON smt_station_rows (material_spec)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_smt_station_rows_po ON smt_station_rows (purchase_no)"
+        ))
+
+        # SMT 巡检明细附站位快照
+        ipqc_line_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(smt_ipqc_lines)"))
+        } if conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='smt_ipqc_lines' LIMIT 1")
+        ).fetchone() else set()
+        if ipqc_line_cols:
+            for col, ddl in (
+                ("station_no", "ALTER TABLE smt_ipqc_lines ADD COLUMN station_no VARCHAR(64)"),
+                ("feeder", "ALTER TABLE smt_ipqc_lines ADD COLUMN feeder VARCHAR(64)"),
+                ("station_material_spec", "ALTER TABLE smt_ipqc_lines ADD COLUMN station_material_spec VARCHAR(256)"),
+                ("station_side", "ALTER TABLE smt_ipqc_lines ADD COLUMN station_side VARCHAR(16)"),
+                ("in_station_table", "ALTER TABLE smt_ipqc_lines ADD COLUMN in_station_table INTEGER DEFAULT 0"),
+                ("station_machine_no", "ALTER TABLE smt_ipqc_lines ADD COLUMN station_machine_no INTEGER DEFAULT 0"),
+            ):
+                if col not in ipqc_line_cols:
+                    conn.execute(text(ddl))
+
+        # 多订单合并送货单
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS shipment_slips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slip_no VARCHAR(32) NOT NULL UNIQUE,
+                customer_id VARCHAR(64) DEFAULT '',
+                customer_name VARCHAR(128),
+                ship_date VARCHAR(32) NOT NULL,
+                logistics VARCHAR(128),
+                remark VARCHAR(256),
+                operator VARCHAR(64),
+                line_count INTEGER DEFAULT 0,
+                total_qty INTEGER DEFAULT 0,
+                created_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_shipment_slips_customer ON shipment_slips (customer_id)"
+        ))
+        ship_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(shipments)")).fetchall()
+        } if conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shipments' LIMIT 1")
+        ).fetchone() else set()
+        if ship_cols and "slip_id" not in ship_cols:
+            conn.execute(text("ALTER TABLE shipments ADD COLUMN slip_id INTEGER"))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_shipments_slip_id ON shipments (slip_id)"
+            ))
+        # 发货审核：pending 待确认 / approved 已确认（历史单默认 approved）
+        if ship_cols and "approval_status" not in ship_cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE shipments ADD COLUMN approval_status VARCHAR(16) DEFAULT 'approved'"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_shipments_approval_status "
+                    "ON shipments (approval_status)"
+                )
+            )
+            conn.execute(
+                text(
+                    "UPDATE shipments SET approval_status='approved' "
+                    "WHERE approval_status IS NULL OR approval_status=''"
+                )
+            )
+        if ship_cols and "approved_by" not in ship_cols:
+            conn.execute(text("ALTER TABLE shipments ADD COLUMN approved_by VARCHAR(64)"))
+        if ship_cols and "approved_at" not in ship_cols:
+            conn.execute(text("ALTER TABLE shipments ADD COLUMN approved_at DATETIME"))
+        if ship_cols and "qty_per_box" not in ship_cols:
+            conn.execute(text("ALTER TABLE shipments ADD COLUMN qty_per_box INTEGER DEFAULT 1"))
+            conn.execute(
+                text(
+                    "UPDATE shipments SET qty_per_box=1 "
+                    "WHERE qty_per_box IS NULL OR qty_per_box < 1"
+                )
+            )
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS shipment_boxes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                box_no VARCHAR(64) UNIQUE,
+                shipment_id INTEGER,
+                slip_id INTEGER,
+                line_key VARCHAR(128),
+                purchase_no VARCHAR(64),
+                product_goods_no VARCHAR(128),
+                product_goods_name VARCHAR(256),
+                customer_name VARCHAR(128),
+                box_index INTEGER DEFAULT 1,
+                box_count INTEGER DEFAULT 1,
+                qty INTEGER DEFAULT 0,
+                ship_date VARCHAR(32),
+                created_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_shipment_boxes_shipment ON shipment_boxes (shipment_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_shipment_boxes_slip ON shipment_boxes (slip_id)"
+        ))
+        box_tbl_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(shipment_boxes)")).fetchall()
+        } if conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shipment_boxes' LIMIT 1")
+        ).fetchone() else set()
+        if box_tbl_cols and "qty_target" not in box_tbl_cols:
+            conn.execute(text("ALTER TABLE shipment_boxes ADD COLUMN qty_target INTEGER DEFAULT 0"))
+            conn.execute(text("UPDATE shipment_boxes SET qty_target=qty WHERE qty_target IS NULL OR qty_target=0"))
+        if box_tbl_cols and "status" not in box_tbl_cols:
+            conn.execute(text("ALTER TABLE shipment_boxes ADD COLUMN status VARCHAR(16) DEFAULT 'sealed'"))
+            conn.execute(
+                text(
+                    "UPDATE shipment_boxes SET status='shipped' "
+                    "WHERE shipment_id IS NOT NULL AND (status IS NULL OR status='')"
+                )
+            )
+        if box_tbl_cols and "pack_mode" not in box_tbl_cols:
+            conn.execute(text("ALTER TABLE shipment_boxes ADD COLUMN pack_mode VARCHAR(16) DEFAULT 'ship'"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_shipment_boxes_line_status ON shipment_boxes (line_key, status)"
+        ))
+        scan_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(order_scans)")).fetchall()
+        } if conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_scans' LIMIT 1")
+        ).fetchone() else set()
+        if scan_cols and "box_id" not in scan_cols:
+            conn.execute(text("ALTER TABLE order_scans ADD COLUMN box_id INTEGER"))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_order_scans_box_id ON order_scans (box_id)"
+            ))
+
+        # 入箱扫码时箱子还没有出库单；旧表 shipment_id NOT NULL 会导致「开箱」500
+        box_info_rows = conn.execute(text("PRAGMA table_info(shipment_boxes)")).fetchall()
+        box_col_map = {row[1]: row for row in box_info_rows}
+        ship_id_row = box_col_map.get("shipment_id")
+        if ship_id_row is not None and int(ship_id_row[3] or 0) == 1:
+            logger.info("重建 shipment_boxes：允许 shipment_id 为空（先入箱后发货）")
+            conn.execute(text("""
+                CREATE TABLE shipment_boxes_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    box_no VARCHAR(64) UNIQUE,
+                    shipment_id INTEGER,
+                    slip_id INTEGER,
+                    line_key VARCHAR(128),
+                    purchase_no VARCHAR(64),
+                    product_goods_no VARCHAR(128),
+                    product_goods_name VARCHAR(256),
+                    customer_name VARCHAR(128),
+                    box_index INTEGER DEFAULT 1,
+                    box_count INTEGER DEFAULT 1,
+                    qty INTEGER DEFAULT 0,
+                    qty_target INTEGER DEFAULT 0,
+                    status VARCHAR(16) DEFAULT 'sealed',
+                    pack_mode VARCHAR(16) DEFAULT 'ship',
+                    ship_date VARCHAR(32),
+                    created_at DATETIME
+                )
+            """))
+            copy_cols = [
+                c
+                for c in (
+                    "id",
+                    "box_no",
+                    "shipment_id",
+                    "slip_id",
+                    "line_key",
+                    "purchase_no",
+                    "product_goods_no",
+                    "product_goods_name",
+                    "customer_name",
+                    "box_index",
+                    "box_count",
+                    "qty",
+                    "qty_target",
+                    "status",
+                    "pack_mode",
+                    "ship_date",
+                    "created_at",
+                )
+                if c in box_col_map
+            ]
+            cols_sql = ", ".join(copy_cols)
+            conn.execute(
+                text(
+                    f"INSERT INTO shipment_boxes_new ({cols_sql}) "
+                    f"SELECT {cols_sql} FROM shipment_boxes"
+                )
+            )
+            conn.execute(text("DROP TABLE shipment_boxes"))
+            conn.execute(text("ALTER TABLE shipment_boxes_new RENAME TO shipment_boxes"))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_shipment_boxes_shipment ON shipment_boxes (shipment_id)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_shipment_boxes_slip ON shipment_boxes (slip_id)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_shipment_boxes_line_status ON shipment_boxes (line_key, status)"
+            ))
+
+        printed_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(shipment_boxes)")).fetchall()
+        } if conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shipment_boxes' LIMIT 1")
+        ).fetchone() else set()
+        if printed_cols and "label_printed_at" not in printed_cols:
+            conn.execute(text("ALTER TABLE shipment_boxes ADD COLUMN label_printed_at DATETIME"))
+        if printed_cols and "label_printed_by" not in printed_cols:
+            conn.execute(text("ALTER TABLE shipment_boxes ADD COLUMN label_printed_by VARCHAR(64)"))
 
         conn.commit()
 

@@ -416,6 +416,15 @@
   async function load() {
     await loadConfig();
     await loadCustomers();
+    // 不默认拉全量库存（易卡死）；库存明细需点查询或选客户
+    if (activeWhTab === 'materials') {
+      const tbody = document.getElementById('wh-materials-table');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="empty">请选择客户或输入料号后点「查询」</td></tr>';
+      document.querySelectorAll('.wh-tab[data-wh-tab]').forEach(b => b.classList.toggle('active', b.dataset.whTab === 'materials'));
+      document.querySelectorAll('#page-warehouse .wh-panel').forEach(p => p.classList.add('hidden'));
+      document.getElementById('wh-panel-materials')?.classList.remove('hidden');
+      return;
+    }
     switchWhTab(activeWhTab);
   }
 
@@ -643,8 +652,8 @@
 
   function toolingRegBadge(registered) {
     return registered
-      ? '<span class="kit-badge kit-ready">已登记</span>'
-      : '<span class="kit-badge kit-partial">未登记</span>';
+      ? '<span class="kit-badge kit-ready">已登</span>'
+      : '<span class="kit-badge kit-partial">未登</span>';
   }
 
   async function loadToolingCatalog() {
@@ -657,12 +666,13 @@
     const tbody = document.getElementById('wh-tooling-table');
     if (!tbody) return [];
     if (!toolingCatalog.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无在制订单机型</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无在制订单机型</td></tr>';
       return [];
     }
     tbody.innerHTML = toolingCatalog.map(r => {
       const rowClass = toolingSelectedKey === toolingRowKey(r) ? ' selected' : '';
       const complete = r.tooling_complete ? ' eng-model-imported' : (r.registered_count ? ' eng-model-pending' : '');
+      const supplier = (r.supplier || '').trim();
       return `
       <tr class="wh-tooling-row${rowClass}${complete}" data-key="${toolingRowKey(r)}">
         <td>${r.internal_code}</td>
@@ -671,6 +681,7 @@
         <td>${toolingRegBadge(r.stencil_registered)}</td>
         <td>${toolingRegBadge(r.wave_fixture_registered)}</td>
         <td>${toolingRegBadge(r.ict_fct_fixture_registered)}</td>
+        <td class="wh-tooling-supplier" title="${supplier.replace(/"/g, '&quot;')}">${supplier || '—'}</td>
       </tr>`;
     }).join('');
     tbody.querySelectorAll('.wh-tooling-row').forEach(tr => {
@@ -760,6 +771,29 @@
     }
   }
 
+  async function syncToolingShare() {
+    const btn = document.getElementById('btn-wh-tooling-sync');
+    if (btn) btn.disabled = true;
+    try {
+      window.EMS.showToast('正在同步共享盘工装…');
+      const res = await engApi('/tooling/sync', { method: 'POST' });
+      const parts = [
+        res.message || '同步完成',
+        res.by_internal_code ? Object.entries(res.by_internal_code).map(([k, v]) => `${k}:${v}`).join(' ') : '',
+      ].filter(Boolean);
+      window.EMS.showToast(parts.join(' · '), 'success');
+      const meta = document.getElementById('wh-tooling-meta');
+      if (meta && res.merged_count != null) {
+        meta.textContent = `上次同步 ${res.merged_count} 条（新建 ${res.created || 0} / 更新 ${res.updated || 0}）`;
+      }
+      await loadToolingCatalog();
+    } catch (e) {
+      window.EMS.showToast('工装同步失败：' + e.message, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   function init() {
     document.getElementById('btn-wh-search')?.addEventListener('click', () => {
       stockInMaterialFilter = null;
@@ -799,6 +833,7 @@
     document.getElementById('wh-tooling-search')?.addEventListener('keydown', e => { if (e.key === 'Enter') loadToolingCatalog(); });
     document.getElementById('wh-tooling-filter-code')?.addEventListener('change', loadToolingCatalog);
     document.getElementById('btn-wh-tooling-save')?.addEventListener('click', saveTooling);
+    document.getElementById('btn-wh-tooling-sync')?.addEventListener('click', syncToolingShare);
   }
 
   window.WarehouseApp = { init, load, loadDept, switchTab: switchWhTab };

@@ -1,146 +1,43 @@
 {
-  "public_base_url": "",
   "sync_interval_minutes": 10,
-  "sync_daily_hour": 9,
+  "sync_daily_hour": 7,
   "sync_daily_minute": 0,
+  "sync_daily_hours": [
+    7,
+    12,
+    17
+  ],
+  "sync_daily_slots": [
+    "07:00",
+    "12:05",
+    "17:35"
+  ],
   "auto_sync_enabled": true,
-  "login_username": "sysadmin",
+  "login_username": "admin",
   "login_password": "CHANGE_ME",
   "dashboard_password": "CHANGE_ME",
-  "warehouse_share_path": "/Users/dx/Desktop/共享-测试软件资料/D-仓库表格/客户进销表",
+  "receive_board": {
+    "history_start": "2026-01-01"
+  },
+  "warehouse_share_path": "",
   "warehouse_auto_sync_enabled": false,
   "warehouse_sync_interval_minutes": 120,
-  "substitution_file_path": "/Users/dx/Desktop/EMS/替代料06-03.xls",
-  "process_detail_file_path": "/Users/dx/Desktop/EMS/工艺明细.xlsx",
-  "engineering_share_base": "/Users/dx/Desktop/共享-测试软件资料/A-生产 工程 品质共用文件夹",
-  "hr_roster_path": "/Users/dx/Desktop/共享-测试软件资料/B-行政 人事资料/鼎雄员工花名册.xlsx",
-  "aoi": {
-    "share": "mes_txt",
-    "username": "A",
-    "password": "",
-    "auto_sync_enabled": true,
-    "sync_interval_minutes": 5,
-    "max_files_per_sync": 0,
-    "lookback_days": 14,
-    "machines": [
-      {
-        "id": "aoi-115",
-        "host": "192.168.2.115"
-      },
-      {
-        "id": "aoi-116",
-        "host": "192.168.2.116"
-      }
-    ]
-  },
-  "ict": {
-    "auto_sync_enabled": true,
-    "sync_interval_minutes": 5,
-    "max_files_per_sync": 800,
-    "lookback_days": 7,
-    "share": "ICT测试记录",
-    "subpath": "test1",
-    "timezone": "Asia/Shanghai",
-    "gate_api_key": "",
-    "sync_windows": [
-      {
-        "start": "08:00",
-        "end": "12:00"
-      },
-      {
-        "start": "12:00",
-        "end": "13:30",
-        "interval_minutes": 30
-      },
-      {
-        "start": "13:30",
-        "end": "17:30"
-      },
-      {
-        "start": "18:00",
-        "end": "23:00"
-      }
-    ],
-    "machines": [
-      {
-        "id": "ict-108",
-        "host": "192.168.2.123",
-        "username": "Administrator",
-        "password": ""
-      },
-      {
-        "id": "ict-129",
-        "host": "192.168.2.131",
-        "username": "Administrator",
-        "password": ""
-      },
-      {
-        "id": "ict-136",
-        "host": "192.168.2.126",
-        "username": "Administrator",
-        "password": ""
-      }
-    ]
-  },
-  "enjiu_ats": {
-    "auto_sync_enabled": true,
-    "open_orders_only": true,
-    "lookback_days": 120,
-    "max_files_per_sync": 2000,
-    "share": "ENJOY",
-    "machines": [
-      {
-        "id": "enjiu-ats-156",
-        "host": "192.168.2.156",
-        "username": "Administrator",
-        "password": ""
-      }
-    ],
-    "sources": [
-      {
-        "id": "enjiu-ats-156",
-        "host": "192.168.2.156",
-        "username": "Administrator",
-        "password": "",
-        "share": "ENJOY",
-        "subpath": "ATS/log/Var_Type",
-        "kind": "var_type_json"
-      },
-      {
-        "id": "enjiu-digitest-156",
-        "host": "192.168.2.156",
-        "username": "Administrator",
-        "password": "",
-        "share": "ENJOY",
-        "subpath": "DigiTest/log",
-        "kind": "digitest_log"
-      }
-    ]
-  },
-  "wang123_legacy": {
-    "api_base": "https://zym.wang123.online",
-    "web_base": "https://www.wang123.online",
-    "username": "blue",
-    "password": "",
-    "auto_sync_enabled": true,
-    "sync_interval_minutes": 30,
-    "default_scan_status": "shipped"
-  },
-  "tts": {
-    "api_base": "http://tts.felicitysolar.com:8890",
-    "username": "dx0101",
-    "password": "",
-    "customer_id": "feilisi",
-    "customer_name": "菲利斯",
-    "auto_sync_enabled": true,
-    "sync_interval_minutes": 60,
-    "max_workers": 8
-  },
+  "tooling_stencil_path": "",
+  "tooling_fixture_path": "",
+  "tooling_auto_sync_enabled": false,
+  "tooling_sync_interval_minutes": 120,
+  "substitution_file_path": "",
+  "process_detail_file_path": "",
+  "engineering_share_base": "",
+  "hr_roster_path": "",
+  "laser_import_default_path": "",
+  "laser_print_register_path": "",
+  "eng_auto_review_enabled": false,
   "engineering_customers": [
     {
       "internal_code": "A123",
       "customer_id": "feilisi",
-      "name": "菲利斯",
+      "name": "菲利斯 (模板)",
       "bom_folder": "A123客户最新资料",
       "asset_folders": [
         "A123"
@@ -170,7 +67,7 @@
     {
       "internal_code": "A116",
       "customer_id": "enjiu",
-      "name": "恩玖·鼎雄",
+      "name": "恩玖·鼎雄 (模板)",
       "bom_folder": "A116-NJ",
       "rules": {
         "model_key_regex": "^(0\\d{7,8}|99\\d{6,8})",
@@ -207,13 +104,13 @@
     {
       "internal_code": "A067",
       "customer_id": "yonglian",
-      "name": "永联",
+      "name": "永联 (模板)",
       "bom_folder": "A067-YL",
       "asset_folders": [
         "A067-YL"
       ],
       "rules": {
-        "model_key_regex": "^(91\\.\\d{4}\\.\\d+|03\\.\\d{2}\\.\\d+|69\\.\\d{2}\\.\\d+)",
+        "model_key_regex": "^(91\\.\\d{4}\\.\\d+|03\\.\\d{2}\\.\\d+)",
         "bom_parse_profile": "yonglian",
         "checklist": {
           "bom": true,
@@ -240,7 +137,7 @@
         "manual_daeae675",
         "wh_yilanke"
       ],
-      "name": "亿兰科",
+      "name": "亿兰科 (模板)",
       "bom_folder": "A120客户最新资料",
       "asset_folders": [
         "A120"
@@ -265,6 +162,114 @@
           "allow_approve_without_mount": false
         }
       }
+    },
+    {
+      "internal_code": "A114",
+      "customer_id": "yuanxin",
+      "customer_id_aliases": [
+        "manual_a58399fe",
+        "wh_yuanxin"
+      ],
+      "name": "源信 (模板)",
+      "bom_folder": "A114客户最新资料",
+      "asset_folders": [
+        "A114"
+      ],
+      "rules": {
+        "model_key_regex": "^(02\\.\\d{2}\\.\\d+)",
+        "bom_parse_profile": "enjiu",
+        "assets_scope": "order",
+        "checklist": {
+          "bom": true,
+          "placement": true,
+          "gerber": false,
+          "refmap": false,
+          "mount_resolved": true
+        },
+        "mount": {
+          "extra_smt_name_patterns": [],
+          "extra_dip_name_patterns": [],
+          "extra_assy_name_patterns": []
+        },
+        "workflow": {
+          "require_placement": true,
+          "allow_approve_without_mount": false
+        }
+      }
+    },
+    {
+      "internal_code": "A137",
+      "customer_id": "huaxia_hengtai",
+      "customer_id_aliases": [
+        "wh_huaxia_hengtai",
+        "wh_huaxia",
+        "hxht",
+        "manual_36fec023"
+      ],
+      "name": "华夏恒泰 (模板)",
+      "bom_folder": "A137客户最新资料",
+      "asset_folders": [
+        "A137"
+      ],
+      "rules": {
+        "model_key_regex": "^(YM\\w+[-\\w]*|PC\\d{3,6}|[A-Z]{2}\\w{3,})",
+        "bom_parse_profile": "enjiu",
+        "assets_scope": "order",
+        "checklist": {
+          "bom": true,
+          "placement": true,
+          "gerber": false,
+          "refmap": false,
+          "mount_resolved": true
+        },
+        "mount": {
+          "extra_smt_name_patterns": [],
+          "extra_dip_name_patterns": [],
+          "extra_assy_name_patterns": []
+        },
+        "workflow": {
+          "require_placement": true,
+          "allow_approve_without_mount": false
+        }
+      }
+    },
+    {
+      "internal_code": "A111",
+      "customer_id": "manual_b47e9bc2",
+      "name": "苏州特尔斯特 (模板)",
+      "bom_folder": "A111客户最新资料",
+      "asset_folders": [
+        "A111"
+      ],
+      "rules": {
+        "model_key_regex": "^(.+)$",
+        "model_code_variants": [],
+        "bom_parse_profile": "auto",
+        "assets_scope": "model",
+        "checklist": {
+          "bom": true,
+          "placement": true,
+          "gerber": false,
+          "refmap": false,
+          "mount_resolved": true
+        },
+        "skip_folder_prefixes": [
+          "000",
+          "生产资料压缩包",
+          "管制明细",
+          "旧资料"
+        ],
+        "mount": {
+          "extra_smt_name_patterns": [],
+          "extra_dip_name_patterns": [],
+          "extra_assy_name_patterns": []
+        },
+        "workflow": {
+          "require_placement": true,
+          "allow_approve_without_mount": false,
+          "auto_approve": true
+        }
+      }
     }
   ],
   "customers": [
@@ -272,46 +277,289 @@
       "id": "feilisi",
       "name": "菲利斯",
       "api_type": "v1",
-      "srm_base_url": "http://139.159.240.251:19190",
+      "srm_base_url": "http://YOUR_SRM_HOST",
       "api_path": "",
-      "login_name": "FL00676",
+      "login_name": "",
       "password": "",
-      "enabled": true
+      "enabled": false,
+      "order_remark": "",
+      "acct_id": "",
+      "entry_role": "SRM"
     },
     {
       "id": "enjiu",
       "name": "恩玖·鼎雄",
       "api_type": "v2",
-      "srm_base_url": "http://218.17.126.115:60801",
+      "srm_base_url": "http://YOUR_SRM_HOST",
       "api_path": "/adpweb",
-      "login_name": "100246",
+      "login_name": "",
       "password": "",
-      "enabled": true
+      "enabled": false,
+      "order_remark": "",
+      "acct_id": "",
+      "entry_role": "SRM"
     },
     {
       "id": "yonglian",
       "name": "永联",
       "api_type": "kingdee",
-      "srm_base_url": "http://k3.szwinline.com:8880",
+      "srm_base_url": "http://YOUR_SRM_HOST",
       "api_path": "/k3cloud",
-      "acct_id": "5d6dce3c732bc4",
-      "entry_role": "SRM",
-      "login_name": "07.01.0089",
+      "login_name": "",
       "password": "",
-      "enabled": true
+      "enabled": false,
+      "order_remark": "",
+      "acct_id": "",
+      "entry_role": "SRM"
     },
     {
       "id": "yilanke",
       "name": "亿兰科",
+      "api_type": "yilanke_mom",
+      "srm_base_url": "http://YOUR_SRM_HOST",
+      "api_path": "",
+      "login_name": "",
+      "password": "",
+      "enabled": false,
+      "order_remark": "",
+      "acct_id": "",
+      "entry_role": "SRM"
+    },
+    {
+      "id": "huaxia_hengtai",
+      "name": "华夏恒泰",
       "api_type": "manual",
       "srm_base_url": "",
       "api_path": "",
       "login_name": "",
       "password": "",
-      "enabled": true
+      "enabled": false,
+      "order_remark": "",
+      "acct_id": "",
+      "entry_role": "MANUAL"
+    },
+    {
+      "id": "manual_b47e9bc2",
+      "name": "苏州特尔斯特",
+      "api_type": "manual",
+      "srm_base_url": "",
+      "api_path": "",
+      "login_name": "",
+      "password": "",
+      "enabled": false,
+      "order_remark": "",
+      "acct_id": "",
+      "entry_role": "MANUAL"
     }
   ],
-  "receive_board": {
-    "history_start": "2026-01-01"
+  "laser_print_register": {
+    "auto_sync_enabled": true,
+    "sync_interval_minutes": 15
+  },
+  "public_base_url": "http://127.0.0.1:8000",
+  "aoi": {
+    "share": "mes_txt",
+    "username": "",
+    "password": "",
+    "auto_sync_enabled": false,
+    "sync_interval_minutes": 5,
+    "max_files_per_sync": 0,
+    "lookback_days": 14,
+    "machines": [
+      {
+        "id": "aoi-159",
+        "host": "AOI-HOST",
+        "share": "mes_txt"
+      },
+      {
+        "id": "aoi-116",
+        "host": "AOI-HOST",
+        "share": "mes_txt"
+      }
+    ]
+  },
+  "pre_oven_aoi": {
+    "auto_sync_enabled": false,
+    "sync_interval_minutes": 5,
+    "max_files_per_sync": 0,
+    "lookback_days": 30,
+    "share": "mes_data",
+    "username": "",
+    "password": "",
+    "machines": [
+      {
+        "id": "pre-oven-aoi",
+        "host": "192.168.x.x",
+        "share": "mes_data"
+      },
+      {
+        "id": "pre-oven-line2",
+        "host": "192.168.x.x",
+        "share": "mes_data"
+      }
+    ]
+  },
+  "smt_station_table": {
+    "share_root": "",
+    "username": "",
+    "password": "",
+    "auto_sync_enabled": false,
+    "sync_interval_minutes": 15,
+    "lookback_days": 120
+  },
+  "ict": {
+    "auto_sync_enabled": false,
+    "sync_interval_minutes": 5,
+    "max_files_per_sync": 8000,
+    "gap_fill_max_files": 8000,
+    "lookback_days": 30,
+    "share": "ICT测试记录",
+    "subpath": "",
+    "recursive": true,
+    "timezone": "Asia/Shanghai",
+    "gate_api_key": "CHANGE_ME_ICT_GATE_KEY",
+    "sync_windows": [
+      {
+        "start": "00:00",
+        "end": "08:00",
+        "interval_minutes": 15
+      },
+      {
+        "start": "08:00",
+        "end": "12:00"
+      },
+      {
+        "start": "12:00",
+        "end": "13:30",
+        "interval_minutes": 30
+      },
+      {
+        "start": "13:30",
+        "end": "17:30"
+      },
+      {
+        "start": "18:00",
+        "end": "23:00"
+      },
+      {
+        "start": "23:00",
+        "end": "24:00",
+        "interval_minutes": 15
+      }
+    ],
+    "machines": [
+      {
+        "id": "ict-115",
+        "host": "ICT-HOST",
+        "username": "",
+        "password": ""
+      },
+      {
+        "id": "ict-119",
+        "host": "ICT-HOST",
+        "username": "",
+        "password": ""
+      },
+      {
+        "id": "ict-126",
+        "host": "ICT-HOST",
+        "username": "",
+        "password": ""
+      }
+    ]
+  },
+  "enjiu_ats": {
+    "auto_sync_enabled": false,
+    "open_orders_only": true,
+    "archive_non_open": true,
+    "lookback_days": 14,
+    "max_files_per_sync": 400,
+    "share": "ENJOY",
+    "timezone": "Asia/Shanghai",
+    "machines": [
+      {
+        "id": "enjiu-ats-157",
+        "host": "192.168.x.x",
+        "hostname": "HOSTNAME",
+        "username": "",
+        "password": ""
+      },
+      {
+        "id": "enjiu-ats-158",
+        "host": "192.168.x.x",
+        "hostname": "HOSTNAME",
+        "username": "",
+        "password": ""
+      }
+    ],
+    "sources": [
+      {
+        "id": "enjiu-ats-157",
+        "host": "192.168.x.x",
+        "hostname": "HOSTNAME",
+        "username": "",
+        "password": "",
+        "share": "ENJOY",
+        "subpath": "ATS/log/Var_Type",
+        "kind": "var_type_json"
+      },
+      {
+        "id": "enjiu-digitest-157",
+        "host": "192.168.x.x",
+        "hostname": "HOSTNAME",
+        "username": "",
+        "password": "",
+        "share": "ENJOY",
+        "subpath": "DigiTest/log",
+        "kind": "digitest_log"
+      },
+      {
+        "id": "enjiu-ats-158",
+        "host": "192.168.x.x",
+        "hostname": "HOSTNAME",
+        "username": "",
+        "password": "",
+        "share": "ENJOY",
+        "subpath": "ATS/log/Var_Type",
+        "kind": "var_type_json"
+      },
+      {
+        "id": "enjiu-digitest-158",
+        "host": "192.168.x.x",
+        "hostname": "HOSTNAME",
+        "username": "",
+        "password": "",
+        "share": "ENJOY",
+        "subpath": "DigiTest/log",
+        "kind": "digitest_log"
+      }
+    ]
+  },
+  "wang123_legacy": {
+    "api_base": "https://zym.wang123.online",
+    "web_base": "https://www.wang123.online",
+    "username": "",
+    "password": "",
+    "auto_sync_enabled": false,
+    "sync_interval_minutes": 30,
+    "default_scan_status": "shipped",
+    "process_auto_sync_enabled": false,
+    "process_sync_interval_minutes": 30,
+    "process_max_pages_per_station": 30,
+    "process_lookback_hours": 48,
+    "process_page_size": 200,
+    "ict_auto_sync_enabled": false,
+    "ict_max_pages": 40,
+    "ict_lookback_hours": 48
+  },
+  "tts": {
+    "api_base": "http://YOUR_TTS_HOST",
+    "username": "",
+    "password": "",
+    "customer_id": "feilisi",
+    "customer_name": "菲利斯",
+    "auto_sync_enabled": false,
+    "sync_interval_minutes": 60,
+    "max_workers": 8
   }
 }

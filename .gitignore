@@ -1,11 +1,33 @@
-# EMS — 勿提交密钥与本地库
+# 依赖与虚拟环境（现场重装）
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+
+# Python / 缓存
+*.pyc
+__pycache__/
+.DS_Store
+*.log
+/tmp/
+
+# 本机密钥与环境（只提交 *.example）
 .env
 .env.*
 !.env.example
+!**/.env*.example
+!backend/.env.postgres.example
 backend/.env.postgres
-# 本机路径覆盖（由 sync 从 env/*.example 生成）
 env/local.env
 env/local.*.env
+
+# 运行时配置含现网口令/IP —— 仓库只保留 *.example.json
+backend/srm_config.json
+tools/ict_gate_app/ict_gate_config.json
+backend/data/wang123_token.txt
+backend/certs/*.pem
+backend/certs/*.key
+
+# 数据库与备份
 backend/ems.db
 backend/ems.db-*
 backend/ems.dev.db
@@ -13,20 +35,29 @@ backend/ems.dev.db-*
 backend/ems.dev.db.bak*
 backend/*.db.bak*
 backend/backups/
-*.pyc
-__pycache__/
-.DS_Store
-backend/.venv/
-frontend/node_modules/
-frontend/dist/
-*.log
-/tmp/
-scripts/_db_exports/
-scripts/.sync_stamps/
 *.dump
 *.sql.gz
+scripts/_db_exports/
+scripts/.sync_stamps/
+scripts/_share_paths.json
 
-# 含真实口令/Token 的运行时配置（仓库只保留 *.example.json）
-backend/srm_config.json
-backend/data/wang123_token.txt
-tools/ict_gate_app/ict_gate_config.json
+# 运行时临时/上传
+backend/tmp_aoi_smb/
+backend/static/uploads/
+backend/data/failed_bom_uploads/
+wang_captcha.png
+yonglian_*.png
+yonglian_*.json
+yonglian_*.html
+
+# IDE / 本机私料（不随交付包）
+.cursor/
+鼎雄资料/
+*.xlsx
+*.xls
+*.pdf
+!docs/**/*.pdf
+
+# 系统文件
+Thumbs.db
+Desktop.ini

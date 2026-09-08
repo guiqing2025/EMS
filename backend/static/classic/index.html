@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>深圳鼎雄电子科技有限公司 · EMS 订单中心</title>
   <link rel="icon" type="image/png" href="/static/assets/logo.png">
-  <link rel="stylesheet" href="/static/classic/style.css?v=49">
+  <link rel="stylesheet" href="/static/classic/style.css?v=53">
   <style>
     body.embed-mode #system-login { display: none !important; }
     body.embed-mode #app-main { display: grid !important; }
@@ -239,35 +239,40 @@
               <option value="">全部内部代码</option>
               <option value="A123">A123 菲利斯</option>
               <option value="A116">A116 恩玖·鼎雄</option>
+              <option value="A067">A067 永联</option>
+              <option value="A120">A120 亿兰科</option>
             </select>
             <input type="text" id="wh-tooling-search" placeholder="机型料号 / 品名">
             <button class="btn btn-primary" id="btn-wh-tooling-search">查询</button>
+            <button class="btn" id="btn-wh-tooling-sync" title="从共享盘钢网/治具明细同步">同步共享盘</button>
             <span class="eng-sub-meta" id="wh-tooling-meta"></span>
           </div>
-          <p class="eng-hint muted">按机型手工登记<strong>钢网</strong>、<strong>波峰治具</strong>、<strong>ICT/FCT 测试工装</strong>的编码、版本、数量与入库时间，供计划排产引用。</p>
-          <div class="eng-layout">
+          <p class="eng-hint muted">按机型登记<strong>钢网</strong>、<strong>波峰治具</strong>、<strong>ICT/FCT 测试工装</strong>。可从共享盘「D-仓库表格」钢网/治具明细同步（覆盖手工）；供计划排产引用。</p>
+          <div class="eng-layout wh-tooling-layout">
             <div class="panel eng-models-panel">
-              <table>
-                <thead><tr><th>代码</th><th>机型料号</th><th>品名</th><th>钢网</th><th>波峰</th><th>ICT/FCT</th></tr></thead>
-                <tbody id="wh-tooling-table"><tr><td colspan="6" class="empty">暂无在制订单机型</td></tr></tbody>
+              <table class="wh-tooling-list-table">
+                <thead><tr><th>代码</th><th>机型料号</th><th>品名</th><th>钢网</th><th>波峰</th><th>ICT</th><th>供应商</th></tr></thead>
+                <tbody id="wh-tooling-table"><tr><td colspan="7" class="empty">暂无在制订单机型</td></tr></tbody>
               </table>
             </div>
-            <div class="panel eng-detail-panel">
+            <div class="panel eng-detail-panel wh-tooling-detail">
               <div class="eng-detail-head" id="wh-tooling-title">选择左侧机型登记工装</div>
               <div id="wh-tooling-editor" class="hidden">
                 <div class="eng-proc-form">
                   <div class="form-row-2">
-                    <div><label class="login-label">内部代码</label><select id="wh-tooling-ic" disabled><option value="A123">A123</option><option value="A116">A116</option></select></div>
+                    <div><label class="login-label">内部代码</label><select id="wh-tooling-ic" disabled><option value="A123">A123</option><option value="A116">A116</option><option value="A067">A067</option><option value="A120">A120</option></select></div>
                     <div><label class="login-label">机型料号</label><input type="text" id="wh-tooling-model-code" readonly></div>
                   </div>
-                  <table class="eng-place-table eng-tooling-form-table">
-                    <thead><tr><th>工装类型</th><th>编码</th><th>版本号</th><th>数量</th><th>入库时间</th><th>备注</th></tr></thead>
-                    <tbody id="wh-tooling-form-table">
-                      <tr data-tool-type="stencil"><td>钢网</td><td><input class="sched-inline" data-field="tool_code" placeholder="钢网编码"></td><td><input class="sched-inline" data-field="version" placeholder="版本"></td><td><input class="sched-inline" data-field="qty" type="number" min="0" step="1" value="1"></td><td><input class="sched-inline" data-field="stored_at" type="date"></td><td><input class="sched-inline" data-field="remark" placeholder="可选"></td></tr>
-                      <tr data-tool-type="wave_fixture"><td>波峰治具</td><td><input class="sched-inline" data-field="tool_code" placeholder="治具编码"></td><td><input class="sched-inline" data-field="version"></td><td><input class="sched-inline" data-field="qty" type="number" min="0" step="1" value="1"></td><td><input class="sched-inline" data-field="stored_at" type="date"></td><td><input class="sched-inline" data-field="remark"></td></tr>
-                      <tr data-tool-type="ict_fct_fixture"><td>ICT/FCT测试工装</td><td><input class="sched-inline" data-field="tool_code" placeholder="工装编码"></td><td><input class="sched-inline" data-field="version"></td><td><input class="sched-inline" data-field="qty" type="number" min="0" step="1" value="1"></td><td><input class="sched-inline" data-field="stored_at" type="date"></td><td><input class="sched-inline" data-field="remark"></td></tr>
-                    </tbody>
-                  </table>
+                  <div class="wh-tooling-form-scroll">
+                    <table class="eng-place-table eng-tooling-form-table">
+                      <thead><tr><th>工装类型</th><th>编码</th><th>版本号</th><th>数量</th><th>入库时间</th><th>备注</th></tr></thead>
+                      <tbody id="wh-tooling-form-table">
+                        <tr data-tool-type="stencil"><td>钢网</td><td><input class="sched-inline" data-field="tool_code" placeholder="钢网编码"></td><td><input class="sched-inline" data-field="version" placeholder="版本"></td><td><input class="sched-inline sched-num" data-field="qty" type="number" min="0" step="1" value="1"></td><td><input class="sched-inline" data-field="stored_at" type="date"></td><td><textarea class="sched-inline wh-tooling-remark" data-field="remark" rows="2" placeholder="可选"></textarea></td></tr>
+                        <tr data-tool-type="wave_fixture"><td>波峰治具</td><td><input class="sched-inline" data-field="tool_code" placeholder="治具编码"></td><td><input class="sched-inline" data-field="version"></td><td><input class="sched-inline sched-num" data-field="qty" type="number" min="0" step="1" value="1"></td><td><input class="sched-inline" data-field="stored_at" type="date"></td><td><textarea class="sched-inline wh-tooling-remark" data-field="remark" rows="2"></textarea></td></tr>
+                        <tr data-tool-type="ict_fct_fixture"><td>ICT/FCT测试工装</td><td><input class="sched-inline" data-field="tool_code" placeholder="工装编码"></td><td><input class="sched-inline" data-field="version"></td><td><input class="sched-inline sched-num" data-field="qty" type="number" min="0" step="1" value="1"></td><td><input class="sched-inline" data-field="stored_at" type="date"></td><td><textarea class="sched-inline wh-tooling-remark" data-field="remark" rows="2"></textarea></td></tr>
+                      </tbody>
+                    </table>
+                  </div>
                   <div class="modal-actions" style="justify-content:flex-start;padding:12px 0 0">
                     <button class="btn btn-primary" id="btn-wh-tooling-save">保存工装登记</button>
                   </div>
@@ -285,7 +290,7 @@
           <div class="page-header">
             <div class="page-heading">
               <h1 class="page-title">工程资料</h1>
-              <p class="page-subtitle">请选择客户模块进入工作台；各客户资料与规则相互隔离</p>
+              <p class="page-subtitle">请选择客户模块进入工作台；各客户资料相互隔离</p>
             </div>
           </div>
           <div id="eng-customer-cards" class="eng-customer-cards">
@@ -309,9 +314,22 @@
               待处理事项 <span id="eng-todo-badge" class="eng-todo-badge">0</span>
             </button>
             <button class="btn" id="btn-eng-auto-bind" title="仅绑定已有本订单专属 BOM 的在制单">绑定已确认 BOM</button>
+            <button class="btn" id="btn-eng-data-audit" title="全库自查：发料用量误用 + 全部 BOM 漏料对比">工程资料自查</button>
           </div>
         </div>
         <div id="eng-rules-summary" class="eng-rules-summary muted"></div>
+        <div id="eng-status-board" class="eng-status-board">
+          <div class="eng-status-board-stats">
+            <button type="button" class="eng-status-chip eng-status-chip-import" id="eng-status-chip-import" title="查看待导入明细">
+              待导入 <strong id="eng-status-import-n">0</strong>
+            </button>
+            <button type="button" class="eng-status-chip eng-status-chip-review" id="eng-status-chip-review" title="查看待审核明细">
+              待审核 <strong id="eng-status-review-n">0</strong>
+            </button>
+            <span class="eng-status-board-break muted" id="eng-status-breakdown"></span>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" id="btn-eng-status-detail">查看缺项明细</button>
+        </div>
         <div id="eng-todo-panel" class="eng-todo-panel hidden">
           <div class="eng-todo-head">
             <div>
@@ -343,8 +361,8 @@
         <div class="eng-layout">
           <div class="panel eng-models-panel">
             <table>
-              <thead><tr><th>代码</th><th>客户</th><th>机型料号</th><th>订单号</th><th>品名</th><th>BOM</th><th>审核</th><th>数量</th></tr></thead>
-              <tbody id="eng-models-table"><tr><td colspan="8" class="empty">暂无在制订单</td></tr></tbody>
+              <thead><tr><th>代码</th><th>客户</th><th>机型料号</th><th>订单号</th><th>品名</th><th>BOM</th><th>坐标</th><th>GB</th><th>审核</th><th>数量</th></tr></thead>
+              <tbody id="eng-models-table"><tr><td colspan="10" class="empty">暂无在制订单</td></tr></tbody>
             </table>
           </div>
           <div class="panel eng-detail-panel eng-docs-detail">
@@ -353,10 +371,10 @@
               <div class="eng-mount-profile-bar hidden" id="eng-mount-profile-bar">
                 <label for="eng-mount-profile">贴装画像</label>
                 <select id="eng-mount-profile">
-                  <option value="">自动识别</option>
-                  <option value="dip_only">纯插件</option>
-                  <option value="smt_only">纯贴片</option>
-                  <option value="mixed">混贴</option>
+                  <option value="">请选择（必选）</option>
+                  <option value="dip_only">纯插件 DIP</option>
+                  <option value="smt_only">纯贴片 SMT</option>
+                  <option value="mixed">混贴 SMT+DIP</option>
                 </select>
                 <span class="eng-mount-profile-hint" id="eng-mount-profile-hint"></span>
               </div>
@@ -366,6 +384,7 @@
               <button class="btn btn-primary hidden" id="btn-eng-review-approve">审核通过</button>
               <button class="btn hidden" id="btn-eng-review-reject">退回</button>
               <button class="btn" id="btn-eng-print-issue">打印发料单</button>
+              <button class="btn" id="btn-eng-print-history" title="查看本订单发料单打印记录（料号清单可追溯）">发料记录</button>
               <button class="btn" id="btn-eng-bom-export">导出 BOM</button>
               <button class="btn btn-danger" id="btn-eng-bom-delete" title="清除本订单已确认的 BOM，可重新导入">清除 BOM</button>
               <span class="kit-badge" id="eng-kit-badge"></span>
@@ -384,8 +403,8 @@
               </div>
               <div class="eng-asset-section-body" id="eng-bom-section-body">
             <table>
-              <thead><tr><th>序号</th><th>元件料号</th><th>品名</th><th>贴装</th><th>面别</th><th>说明/未识别原因</th><th>规格</th><th>用量</th><th>单位</th><th class="eng-kit-col-pos">位号</th><th>工艺</th></tr></thead>
-              <tbody id="eng-lines-table"><tr><td colspan="11" class="empty">—</td></tr></tbody>
+              <thead><tr><th>序号</th><th>元件料号</th><th>品名</th><th>贴装</th><th>面别</th><th>说明/未识别原因</th><th>规格</th><th>用量</th><th>单位</th><th class="eng-kit-col-pos">位号</th><th>工艺</th><th class="eng-bom-col-sub">替代料</th></tr></thead>
+              <tbody id="eng-lines-table"><tr><td colspan="12" class="empty">—</td></tr></tbody>
             </table>
               </div>
             </div>
@@ -440,6 +459,7 @@
                 <div class="eng-asset-section-actions">
                   <input type="file" id="eng-place-import-file" accept=".csv,.txt,.xlsx,.zip,.rar" class="visually-hidden">
                   <button class="btn btn-primary btn-sm" id="btn-eng-place-import">导入坐标</button>
+                  <button class="btn btn-sm hidden" id="btn-eng-place-export" title="导出坐标文件">导出坐标</button>
                   <button class="btn btn-sm btn-danger hidden" id="btn-eng-place-delete" title="清除本机型已导入的坐标">清除</button>
                 </div>
               </div>
@@ -469,6 +489,7 @@
                 <div class="eng-asset-section-actions">
                   <input type="file" id="eng-gerber-import-file" accept=".zip,.7z,.rar" class="visually-hidden">
                   <button class="btn btn-primary btn-sm" id="btn-eng-gerber-import">导入 Gerber</button>
+                  <button class="btn btn-sm hidden" id="btn-eng-gerber-export" title="导出 Gerber 压缩包">导出 Gerber</button>
                   <button class="btn btn-sm btn-danger hidden" id="btn-eng-gerber-delete" title="清除本机型已导入的 Gerber">清除</button>
                 </div>
               </div>
@@ -526,7 +547,7 @@
         <div id="eng-panel-substitution" class="hidden">
           <div class="filter-panel" id="eng-sub-filter-bar">
             <select id="eng-sub-customer" title="客户平台"></select>
-            <input type="text" id="eng-sub-search" placeholder="元件/子项 / 替代/投产 / 品名">
+            <input type="text" id="eng-sub-search" placeholder="工单编号 / 产品品号 / 材料品号 / 变更物料料号 / 品名">
             <button class="btn btn-primary" id="btn-eng-sub-search">查询</button>
             <button class="btn" id="btn-eng-sub-tpl">下载模板</button>
             <button class="btn" id="btn-eng-sub-xlsx">导入 XLSX</button>
@@ -536,15 +557,8 @@
           </div>
           <div class="panel eng-sub-panel">
             <table class="eng-sub-table" id="eng-sub-table-wrap">
-              <thead id="eng-sub-thead">
-                <tr>
-                  <th class="eng-sub-col-comp">元件品号</th><th>元件品名</th><th>元件规格</th><th>单位</th>
-                  <th class="eng-sub-parent-col">主件品号</th><th class="eng-sub-parent-col">主件品名</th>
-                  <th>关系</th><th class="eng-sub-col-sub">替代料号</th><th>替代品名</th><th>替代规格</th>
-                  <th>顺序</th><th>生效</th><th>失效</th><th>数量</th><th>备注</th><th>来源</th><th>操作</th>
-                </tr>
-              </thead>
-              <tbody id="eng-sub-table"><tr><td colspan="17" class="empty">请选择客户后查看或导入替代料规则</td></tr></tbody>
+              <thead id="eng-sub-thead"></thead>
+              <tbody id="eng-sub-table"><tr><td colspan="8" class="empty">请选择客户后查看或导入 TDA 变更记录</td></tr></tbody>
             </table>
           </div>
           <div class="eng-pagination">
@@ -562,25 +576,75 @@
             </div>
             <p class="eng-sub-meta" id="eng-sub-import-msg"></p>
             <div class="filter-panel">
-              <label>写入策略
-                <select id="eng-sub-import-mode">
-                  <option value="append">追加（同键更新）</option>
-                  <option value="replace">覆盖本客户全部规则</option>
-                  <option value="insert_only">仅新增（同键跳过）</option>
-                </select>
-              </label>
+              <span class="eng-sub-meta">写入方式：TDA 表全量替换该客户现有记录（永联仍为按订单增量）</span>
               <button class="btn btn-primary" id="btn-eng-sub-import-confirm">确认导入</button>
             </div>
             <div class="panel eng-sub-panel" style="max-height:50vh;overflow:auto">
               <table class="eng-sub-table">
                 <thead>
                   <tr>
-                    <th class="eng-sub-col-comp">元件品号</th><th class="eng-sub-col-sub">替代料号</th>
-                    <th class="eng-sub-parent-col">主件品号</th><th>元件品名</th><th>替代品名</th><th>备注</th>
+                    <th>订单号</th><th class="eng-sub-parent-col">机型</th>
+                    <th class="eng-sub-col-comp">原物料号</th><th>原品名</th><th>原规格</th>
+                    <th class="eng-sub-col-sub">替代物料号</th><th>替代品名</th><th>替代规格</th>
                   </tr>
                 </thead>
                 <tbody id="eng-sub-import-tbody"></tbody>
               </table>
+            </div>
+          </div>
+        </div>
+
+        <div id="eng-tda-detail-modal" class="modal hidden">
+          <div class="modal-card eng-tda-detail-card">
+            <div class="eng-tda-detail-head">
+              <strong>TDA 变更详情</strong>
+              <button type="button" class="btn btn-sm" id="btn-tda-detail-close">关闭</button>
+            </div>
+            <div class="eng-tda-detail-grid">
+              <section class="eng-tda-sec">
+                <h4>登记</h4>
+                <div class="eng-tda-kv"><span>序号/状态</span><b id="tda-d-seq">—</b></div>
+                <div class="eng-tda-kv"><span>登记日期</span><b id="tda-d-date">—</b></div>
+                <div class="eng-tda-kv"><span>变更状态</span><b id="tda-d-status">—</b></div>
+                <div class="eng-tda-kv"><span>登记人</span><b id="tda-d-registrant">—</b></div>
+              </section>
+              <section class="eng-tda-sec">
+                <h4>工单 / 产品</h4>
+                <div class="eng-tda-kv"><span>工单编号</span><b id="tda-d-po">—</b></div>
+                <div class="eng-tda-kv"><span>产品品号</span><b id="tda-d-parent">—</b></div>
+                <div class="eng-tda-kv"><span>品名</span><b id="tda-d-pname">—</b></div>
+                <div class="eng-tda-kv eng-tda-kv-wide"><span>规格</span><b id="tda-d-pspec">—</b></div>
+              </section>
+              <section class="eng-tda-sec">
+                <h4>原物料</h4>
+                <label class="login-label">材料品号</label>
+                <input type="text" id="tda-d-comp" readonly>
+                <label class="login-label">材料品名</label>
+                <input type="text" id="tda-d-cname" readonly>
+                <label class="login-label">材料规格</label>
+                <input type="text" id="tda-d-cspec" readonly>
+                <div class="eng-tda-kv"><span>数量</span><b id="tda-d-cqty">—</b></div>
+              </section>
+              <section class="eng-tda-sec eng-tda-sec-highlight">
+                <h4>变更物料（可编辑）</h4>
+                <label class="login-label">变更物料料号</label>
+                <input type="text" id="tda-d-sub" placeholder="变更物料料号">
+                <label class="login-label">变更品名</label>
+                <input type="text" id="tda-d-sname" placeholder="变更品名">
+                <label class="login-label">变更规格</label>
+                <input type="text" id="tda-d-sspec" placeholder="变更规格">
+                <div class="eng-tda-kv"><span>变更数量</span><b id="tda-d-sqty">—</b></div>
+                <div class="eng-tda-kv"><span>0703替代物料表</span><b id="tda-d-legacy">—</b></div>
+              </section>
+              <section class="eng-tda-sec eng-tda-sec-wide">
+                <h4>核对</h4>
+                <div class="eng-tda-kv"><span>变更原因</span><b id="tda-d-reason">—</b></div>
+                <div class="eng-tda-kv"><span>核对结果</span><b id="tda-d-check">—</b></div>
+              </section>
+            </div>
+            <div class="eng-tda-detail-actions">
+              <button type="button" class="btn btn-primary" id="btn-tda-detail-save">保存变更物料</button>
+              <button type="button" class="btn" id="btn-tda-detail-cancel">取消</button>
             </div>
           </div>
         </div>
@@ -621,8 +685,9 @@
                     <span class="muted">对照路线：</span><strong id="eng-proc-route-preview">—</strong>
                   </div>
                   <div class="eng-proc-preview muted" id="eng-proc-raw-process"></div>
-                  <div class="modal-actions" style="justify-content:flex-start;padding:0">
+                  <div class="modal-actions" style="justify-content:flex-start;padding:0;gap:8px">
                     <button class="btn btn-primary" id="btn-eng-proc-save">保存工序对照</button>
+                    <button class="btn" id="btn-eng-proc-delete" title="删除本机型整条工序对照">删除</button>
                   </div>
                 </div>
               </div>
@@ -638,28 +703,43 @@
         <div class="page-header">
           <div class="page-heading">
             <h1 class="page-title">计划排产</h1>
-            <p class="page-subtitle">SMT / DIP 排程 · 计划员全字段编辑</p>
+            <p class="page-subtitle">主计划保存上线日后进「正式排产」· 计划池可先囤未齐套单</p>
           </div>
           <div class="header-actions">
             <button class="btn" id="btn-sched-refresh-kit">刷新备料状态</button>
-            <button class="btn" id="btn-sched-import-order">从订单导入</button>
-            <button class="btn btn-primary" id="btn-sched-add">新增排产行</button>
+            <button class="btn" id="btn-sched-import-order">从订单导入计划</button>
+            <button class="btn btn-primary" id="btn-sched-add">新增计划行</button>
           </div>
         </div>
         <div class="wh-tabs">
-          <button class="wh-tab active" data-sched-tab="smt">SMT 排产</button>
-          <button class="wh-tab" data-sched-tab="dip">DIP 排产</button>
+          <button class="wh-tab active" data-sched-tab="smt">SMT</button>
+          <button class="wh-tab" data-sched-tab="dip">DIP</button>
         </div>
-        <div class="panel sched-panel">
+        <div class="wh-tabs sched-stage-tabs">
+          <button class="wh-tab" data-sched-stage="pool">计划池</button>
+          <button class="wh-tab active" data-sched-stage="board">正式排产</button>
+        </div>
+        <div class="panel sched-panel sched-panel-wide">
           <div class="sched-table-wrap">
-            <table class="sched-table" id="sched-table">
+            <table class="sched-table sched-table-lg" id="sched-table">
               <thead>
                 <tr>
-                  <th>线别</th><th>订单号</th><th>型号</th><th>品名</th><th>工艺</th><th>订单量</th>
-                  <th>交期</th><th>备料</th><th>工装</th><th>日计划</th><th>状态</th><th>备注</th><th></th>
+                  <th class="col-line">线别</th>
+                  <th class="col-po">订单号</th>
+                  <th class="col-model">型号</th>
+                  <th class="col-name">品名</th>
+                  <th class="col-proc">工艺</th>
+                  <th class="col-qty">订单量</th>
+                  <th class="col-due">交期</th>
+                  <th class="col-kit">备料</th>
+                  <th class="col-tool">工装</th>
+                  <th class="col-daily">日计划</th>
+                  <th class="col-status">状态</th>
+                  <th class="col-remark">备注</th>
+                  <th class="col-act">操作</th>
                 </tr>
               </thead>
-              <tbody id="sched-table-body"><tr><td colspan="12" class="empty">暂无排产，点击「新增排产行」</td></tr></tbody>
+              <tbody id="sched-table-body"><tr><td colspan="13" class="empty">暂无数据</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -897,13 +977,16 @@
   </div>
 
   <div class="modal hidden" id="sched-import-modal">
-    <div class="modal-card modal-card-wide">
-      <h2>从订单导入排产</h2>
-      <input type="text" id="sched-import-search" placeholder="订单号 / 料号">
-      <button class="btn btn-primary" id="btn-sched-import-search">搜索订单</button>
-      <div class="panel" style="max-height:280px;overflow:auto;margin-top:12px">
-        <table>
-          <thead><tr><th>客户</th><th>订单号</th><th>料号</th><th>数量</th><th>客户齐套</th><th>工装</th><th>交期</th><th></th></tr></thead>
+    <div class="modal-card modal-card-sched-import">
+      <h2>从订单导入计划</h2>
+      <p class="modal-sub">未齐套也可进计划池；转入正式排产时再校验客户齐套</p>
+      <div class="sched-import-search-row">
+        <input type="text" id="sched-import-search" placeholder="订单号 / 料号 / 客户">
+        <button class="btn btn-primary" id="btn-sched-import-search">搜索订单</button>
+      </div>
+      <div class="panel sched-import-table-wrap">
+        <table class="sched-import-table">
+          <thead><tr><th>客户</th><th>订单号</th><th>料号</th><th>数量</th><th>客户齐套</th><th>工装</th><th>交期</th><th>操作</th></tr></thead>
           <tbody id="sched-import-list"><tr><td colspan="8" class="empty">输入关键词搜索</td></tr></tbody>
         </table>
       </div>
@@ -916,13 +999,14 @@
       <div class="eng-kit-modal-head">
         <div>
           <h2 id="eng-kit-modal-title">工程资料审核工作台</h2>
-          <p class="muted eng-kit-modal-hint" id="eng-kit-modal-hint">按流程核对订单资料：齐套检查 → 贴装面别 → 通过/退回</p>
+          <p class="muted eng-kit-modal-hint" id="eng-kit-modal-hint">核对贴装类型与面别后，通过或退回（本页不核算齐套）</p>
         </div>
         <span class="kit-badge" id="eng-kit-status-badge"></span>
       </div>
       <div id="eng-kit-dossier" class="eng-kit-dossier"></div>
       <p class="modal-sub" id="eng-kit-summary"></p>
       <p class="eng-kit-approve-gate hidden" id="eng-kit-approve-gate"></p>
+      <div class="eng-kit-approve-result hidden" id="eng-kit-approve-result" role="status"></div>
       <div class="panel eng-kit-panel">
         <div class="eng-kit-panel-head">
           <div class="eng-kit-panel-title">贴装明细核对</div>
@@ -935,7 +1019,7 @@
         </div>
         <div class="eng-kit-table-wrap">
           <table class="eng-kit-table">
-            <thead><tr><th>料号</th><th>品名</th><th>规格</th><th>贴装</th><th>面别</th><th>说明/未识别原因</th><th>用量</th><th class="eng-kit-col-pos">位号</th><th class="eng-kit-stock-col">需求</th><th class="eng-kit-stock-col">库存</th><th class="eng-kit-stock-col">欠料</th><th class="eng-kit-stock-col">状态</th><th class="eng-kit-col-sub eng-kit-stock-col">替代料</th></tr></thead>
+            <thead><tr><th>料号</th><th>品名</th><th>规格</th><th>贴装</th><th>面别</th><th>说明/未识别原因</th><th>用量</th><th class="eng-kit-col-pos">位号</th></tr></thead>
             <tbody id="eng-kit-lines"></tbody>
           </table>
         </div>
@@ -943,7 +1027,6 @@
       <div class="modal-actions">
         <button class="btn btn-primary hidden" id="btn-eng-kit-approve">审核通过</button>
         <button class="btn hidden" id="btn-eng-kit-reject">退回修正</button>
-        <button class="btn btn-primary" id="btn-eng-kit-export">导出 XLSX</button>
         <button class="btn" id="btn-eng-kit-close">关闭</button>
       </div>
     </div>
@@ -958,6 +1041,52 @@
       <div class="modal-actions">
         <button type="button" class="btn btn-primary" id="btn-eng-reject-ok">确认退回</button>
         <button type="button" class="btn" id="btn-eng-reject-cancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="eng-status-board-modal">
+    <div class="modal-card modal-card-review-inbox">
+      <h2>工程资料进度明细</h2>
+      <p class="muted" id="eng-status-board-modal-hint">待导入：BOM / 坐标 / Gerber 缺任一；待审核：三份已齐，待核对工序·面别后通过。</p>
+      <div class="eng-status-tabs">
+        <button type="button" class="btn btn-sm active" data-eng-status-tab="import" id="eng-status-tab-import">待导入</button>
+        <button type="button" class="btn btn-sm" data-eng-status-tab="review" id="eng-status-tab-review">待审核</button>
+      </div>
+      <div class="panel eng-review-inbox-panel" id="eng-status-panel-import">
+        <table class="eng-review-inbox-table eng-status-detail-table">
+          <thead>
+            <tr>
+              <th>代码</th>
+              <th>机型 / 品名</th>
+              <th>订单号</th>
+              <th>BOM</th>
+              <th>坐标</th>
+              <th>Gerber</th>
+              <th>缺项</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="eng-status-import-table"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="panel eng-review-inbox-panel hidden" id="eng-status-panel-review">
+        <table class="eng-review-inbox-table eng-status-detail-table">
+          <thead>
+            <tr>
+              <th>代码</th>
+              <th>机型 / 品名</th>
+              <th>订单号</th>
+              <th>提交人</th>
+              <th>说明</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="eng-status-review-table"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="btn-eng-status-board-close">关闭</button>
       </div>
     </div>
   </div>
@@ -1030,10 +1159,38 @@
     </div>
   </div>
 
+  <div class="modal hidden" id="eng-print-history-modal">
+    <div class="modal-card" style="max-width:920px;width:96%">
+      <h2>发料单打印记录</h2>
+      <p class="muted" style="margin:0 0 10px;font-size:13px">记录每次打印的工序筛选与料号清单，用于客诉追溯（如当时是否只打了 SMT 单）。</p>
+      <div id="eng-print-history-body" class="eng-print-history-body">
+        <p class="empty">加载中…</p>
+      </div>
+      <div class="modal-actions" style="margin-top:12px">
+        <button class="btn" id="btn-eng-print-history-close">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="eng-data-audit-modal">
+    <div class="modal-card" style="max-width:960px;width:96%">
+      <h2>工程资料自查</h2>
+      <p class="muted" style="margin:0 0 10px;font-size:13px">发料用量误用（替代规则 qty）+ 全部 BOM 导入漏料对比。修复发料单后请 Ctrl+F5 强刷再重打。</p>
+      <div id="eng-data-audit-body" class="eng-print-history-body">
+        <p class="empty">点击「开始自查」或等待加载…</p>
+      </div>
+      <div class="modal-actions" style="margin-top:12px">
+        <button class="btn btn-primary" id="btn-eng-data-audit-run">开始自查</button>
+        <button class="btn" id="btn-eng-data-audit-xlsx">下载 Excel 报告</button>
+        <button class="btn" id="btn-eng-data-audit-close">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
-  <script src="/static/classic/app.js?v=31"></script>
-  <script src="/static/classic/warehouse.js?v=10"></script>
-  <script src="/static/classic/engineering.js?v=104"></script>
-  <script src="/static/classic/scheduling.js?v=6"></script>
+  <script src="/static/classic/app.js?v=32"></script>
+  <script src="/static/classic/warehouse.js?v=12"></script>
+  <script src="/static/classic/engineering.js?v=117"></script>
+  <script src="/static/classic/scheduling.js?v=8"></script>
 </body>
 </html>

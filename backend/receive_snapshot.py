@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from config import load_config
@@ -165,7 +166,7 @@ def _order_event_date(order: SrmOrder, history_start: date, today: date) -> date
         d = raw
     elif isinstance(raw, str) and raw.strip():
         try:
-            d = date.fromisoformat(raw.strip()[:10])
+            d = date.fromisoformat(raw.strip()[:10].replace("/", "-"))
         except ValueError:
             d = today
     else:
@@ -175,6 +176,78 @@ def _order_event_date(order: SrmOrder, history_start: date, today: date) -> date
     if d > today:
         return today
     return d
+
+
+def _parse_order_day(raw: Any) -> date | None:
+    """解析采购日/单据日；无法解析则返回 None。"""
+    if isinstance(raw, datetime):
+        return raw.date()
+    if isinstance(raw, date):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        text = raw.strip().replace("/", "-")[:10]
+        try:
+            return date.fromisoformat(text)
+        except ValueError:
+            return None
+    return None
+
+
+def _this_month_order_intake(
+    db: Session,
+    *,
+    this_start: date,
+    this_end: date,
+) -> dict[str, dict[str, float]]:
+    """按采购日汇总当月接单数量/含税金额（看板客户）。"""
+    out: dict[str, dict[str, float]] = {
+        cid: {"qty": 0.0, "amount": 0.0} for cid, _ in BOARD_CUSTOMERS
+    }
+    source_ids = board_source_customer_ids()
+    ym = this_start.strftime("%Y-%m")
+    ym_slash = this_start.strftime("%Y/%m")
+    # 先用前缀收窄，再精确落到当月区间
+    candidates = (
+        db.query(
+            SrmOrder.customer_id,
+            SrmOrder.purchase_date,
+            SrmOrder.doc_date,
+            SrmOrder.batch_pur_qty,
+            SrmOrder.tax_amount,
+        )
+        .filter(SrmOrder.customer_id.in_(source_ids))
+        .filter(
+            or_(
+                (
+                    (SrmOrder.purchase_date.isnot(None))
+                    & (SrmOrder.purchase_date != "")
+                    & or_(
+                        SrmOrder.purchase_date.like(f"{ym}%"),
+                        SrmOrder.purchase_date.like(f"{ym_slash}%"),
+                    )
+                ),
+                (
+                    (SrmOrder.doc_date.isnot(None))
+                    & (SrmOrder.doc_date != "")
+                    & or_(
+                        SrmOrder.doc_date.like(f"{ym}%"),
+                        SrmOrder.doc_date.like(f"{ym_slash}%"),
+                    )
+                ),
+            )
+        )
+        .all()
+    )
+    for customer_id, purchase_date, doc_date, qty, tax_amount in candidates:
+        cid = canonical_board_customer_id(customer_id)
+        if cid not in out:
+            continue
+        day = _parse_order_day(purchase_date) or _parse_order_day(doc_date)
+        if day is None or day < this_start or day > this_end:
+            continue
+        out[cid]["qty"] += float(qty or 0)
+        out[cid]["amount"] += float(tax_amount or 0)
+    return out
 
 
 def _fill_board_from_order_balances(
@@ -443,7 +516,8 @@ def build_receive_board(db: Session) -> dict[str, Any]:
                 monthly_acc[cid][ym]["amount"] += amount
         note = (
             f"底层：菲利斯 ASN 收货日；恩玖发货单收货；永联/亿兰科按订单累计收货挂采购月。"
-            f"金额=出货数量×含税单价。月度自 {history_start_ym} 起至 {chart_end_ym}。"
+            f"金额=出货数量×含税单价。当月接单=采购日落在本月的订单含税金额。"
+            f"月度自 {history_start_ym} 起至 {chart_end_ym}。"
         )
     else:
         # 回退：快照差分（仅上月/本月 KPI；月序列保持 0）
@@ -519,6 +593,11 @@ def build_receive_board(db: Session) -> dict[str, Any]:
             )
 
     customers_out = []
+    order_intake = _this_month_order_intake(
+        db,
+        this_start=_month_start(this_month),
+        this_end=min(_month_end(this_month), today),
+    )
     for customer_id, customer_name in BOARD_CUSTOMERS:
         model_map = totals.get(customer_id, {})
         names = _model_names(db, customer_id, set(model_map.keys()) - {"(无料号)"})
@@ -542,6 +621,7 @@ def build_receive_board(db: Session) -> dict[str, Any]:
                 }
             )
         models.sort(key=lambda m: (-m["this_month_qty"], -m["last_month_qty"], m["model_code"]))
+        booked = order_intake.get(customer_id) or {"qty": 0.0, "amount": 0.0}
         customers_out.append(
             {
                 "customer_id": customer_id,
@@ -550,6 +630,8 @@ def build_receive_board(db: Session) -> dict[str, Any]:
                 "this_month_total": round(sum(m["this_month_qty"] for m in models), 2),
                 "last_month_amount": round(sum(m["last_month_amount"] for m in models), 2),
                 "this_month_amount": round(sum(m["this_month_amount"] for m in models), 2),
+                "this_month_order_qty": round(float(booked["qty"]), 2),
+                "this_month_order_amount": round(float(booked["amount"]), 2),
                 "models": models,
             }
         )

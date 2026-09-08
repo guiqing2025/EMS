@@ -31,6 +31,7 @@ from schemas import (
     StockReturnIn,
     StockReturnOut,
     WarehouseBomModelCandidateOut,
+    WarehouseMaterialEnsureIn,
     WarehouseMaterialOut,
     WarehouseMaterialDetailOut,
     WarehouseModelMaterialLineOut,
@@ -328,6 +329,10 @@ def list_open_orders(
             order_qty,
             r.get("customer_id") or customer_id,
             material_status if material_status != "unbound" else None,
+            delivery_qty=getattr(order, "delivery_qty", None) if order else None,
+            un_delivery_qty=getattr(order, "un_delivery_qty", None) if order else None,
+            receive_qty=getattr(order, "receive_qty", None) if order else None,
+            is_completed=bool(getattr(order, "is_completed", False)) if order else False,
         )
         out.append(
             WarehouseOpenOrderOut(
@@ -451,6 +456,13 @@ def list_materials(
         for mat in db.query(WarehouseMaterial).filter(WarehouseMaterial.customer_id.in_(customer_ids)).all():
             stock_maps[mat.customer_id][_norm(mat.material_code)] = mat
 
+    # 预热替代料缓存，避免每行重复打开 Session 查库
+    from substitution_service import _ensure_loaded
+    for cid in customer_ids:
+        try:
+            _ensure_loaded(cid or '')
+        except Exception:
+            pass
     return [
         _material_out(row, last_map.get(row.id), stock_maps.get(row.customer_id), last_op_map.get(row.id))
         for row in rows
@@ -621,6 +633,31 @@ def get_material_detail_api(
     detail["material"] = _material_out(row, last_map.get(row.id), stock_map, last_op_map.get(row.id))
     return detail
 
+
+@router.post("/materials/ensure", response_model=WarehouseMaterialOut)
+def ensure_warehouse_material(
+    payload: WarehouseMaterialEnsureIn,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """BOM 用料点开：若无库存账则建零库存档案，便于查看明细/来料。不影响产线扫码。"""
+    _require_warehouse(principal)
+    from warehouse_batch import _resolve_or_create_material
+
+    mat, created = _resolve_or_create_material(
+        db,
+        payload.customer_id,
+        payload.material_code,
+        material_name=payload.material_name or "",
+        spec=payload.spec or "",
+        unit=payload.unit or "PCS",
+    )
+    if created:
+        mat.remark = "BOM点开自动建档"
+    db.commit()
+    db.refresh(mat)
+    stock_map = _customer_stock_map(db, mat.customer_id)
+    return _material_out(mat, None, stock_map, None)
 
 @router.get("/stock-ins", response_model=list[StockInRecordOut])
 def list_stock_ins(
@@ -1161,32 +1198,10 @@ def api_sync_now(
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
     _require_warehouse(principal)
-    try:
-        summary, logs = sync_warehouse_materials(db)
-        db.commit()
-        return {
-            "message": summary,
-            "files": [
-                ExcelImportResult(
-                    source_file=log.source_file,
-                    customer_name=log.customer_name,
-                    rows_imported=log.rows_imported,
-                    rows_updated=log.rows_updated,
-                    status=log.status,
-                    message=log.message,
-                )
-                for log in logs
-            ],
-        }
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except OSError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"共享盘目录无权访问: {exc}。请用本机终端重启后端并授予桌面文件夹访问权限",
-        ) from exc
+    raise HTTPException(
+        status_code=400,
+        detail="已停用共享盘导入：仓库库存以系统录入为准（来料/发料/退料等）。如需历史参考请联系管理员。",
+    )
 
 
 @router.post("/import-excel", response_model=list[ExcelImportResult])
@@ -1194,31 +1209,12 @@ def api_import_excel(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
-    """兼容旧接口：等同共享盘同步"""
+    """兼容旧接口：已停用共享盘同步。"""
     _require_warehouse(principal)
-    try:
-        _, logs = sync_warehouse_materials(db)
-        db.commit()
-        return [
-            ExcelImportResult(
-                source_file=log.source_file,
-                customer_name=log.customer_name,
-                rows_imported=log.rows_imported,
-                rows_updated=log.rows_updated,
-                status=log.status,
-                message=log.message,
-            )
-            for log in logs
-        ]
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except OSError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"共享盘目录无权访问: {exc}。请用本机终端重启后端并授予桌面文件夹访问权限",
-        ) from exc
+    raise HTTPException(
+        status_code=400,
+        detail="已停用共享盘导入：仓库库存以系统录入为准（来料/发料/退料等）。如需历史参考请联系管理员。",
+    )
 
 
 @router.get("/import-logs", response_model=list[ExcelImportResult])
@@ -1272,22 +1268,5 @@ def export_inventory(
 
 @router.get("/dept/summary")
 def dept_summary(db: Session = Depends(get_db), principal: AuthPrincipal = Depends(require_system_auth)):
-    if not principal.is_dept:
-        raise HTTPException(status_code=403, detail="仅部门账号可访问")
-    dept = principal.department
-    pending_issues = (
-        db.query(StockIssue)
-        .filter(StockIssue.department == dept, StockIssue.status == ISSUE_STATUS_PENDING)
-        .count()
-    )
-    pending_returns = (
-        db.query(StockReturn)
-        .filter(StockReturn.department == dept, StockReturn.status == RETURN_STATUS_PENDING)
-        .count()
-    )
-    return {
-        "department": dept,
-        "display_name": principal.display_name,
-        "pending_issues": pending_issues,
-        "pending_returns": pending_returns,
-    }
+    # 部门领料菜单已下线（计划书清理死入口）；接口保留 410 避免静默误用
+    raise HTTPException(status_code=410, detail="部门领料模块已下线，请改用仓库管理相关功能")

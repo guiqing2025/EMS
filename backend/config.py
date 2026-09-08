@@ -142,6 +142,11 @@ DEFAULT_CONFIG = {
     "warehouse_share_path": "",
     "warehouse_auto_sync_enabled": False,
     "warehouse_sync_interval_minutes": 120,
+    # 工装登记：共享盘钢网/治具明细（相对 D-仓库表格）
+    "tooling_stencil_path": "",
+    "tooling_fixture_path": "",
+    "tooling_auto_sync_enabled": False,
+    "tooling_sync_interval_minutes": 120,
     "substitution_file_path": "",
     "process_detail_file_path": "",
     # 工程 BOM/坐标/Gerber 已改为人工导入，不再扫描此目录；路径仍可供贴码登记表等模块定位上级「共享-测试软件资料」
@@ -200,7 +205,7 @@ DEFAULT_CONFIG = {
             "bom_folder": "A067-YL",
             "asset_folders": ["A067-YL"],
             "rules": {
-                "model_key_regex": r"^(91\.\d{4}\.\d+|03\.\d{2}\.\d+|69\.\d{2}\.\d+)",
+                "model_key_regex": r"^(91\.\d{4}\.\d+|03\.\d{2}\.\d+)",
                 "bom_parse_profile": "yonglian",
                 "checklist": {
                     "bom": True,
@@ -301,6 +306,8 @@ def load_config() -> dict:
     cfg["process_detail_file_path"] = get_process_detail_file_path()
     cfg["engineering_share_base"] = get_engineering_share_base()
     cfg["hr_roster_path"] = get_hr_roster_path()
+    cfg["tooling_stencil_path"] = get_tooling_stencil_path()
+    cfg["tooling_fixture_path"] = get_tooling_fixture_path()
     return cfg
 
 
@@ -359,6 +366,37 @@ def get_hr_roster_path() -> str:
         "hr_roster_path",
         "B-行政 人事资料",
         "鼎雄员工花名册.xlsx",
+    )
+
+
+def get_tooling_warehouse_dir() -> str:
+    """D-仓库表格目录（钢网/治具明细所在）。"""
+    from_env = _env_str("TOOLING_WAREHOUSE_DIR")
+    if from_env:
+        return from_env
+    wh = get_warehouse_share_path()
+    if wh:
+        parent = str(Path(wh).parent)
+        if parent and parent not in (".", ""):
+            return parent
+    return str(share_root() / "D-仓库表格")
+
+
+def get_tooling_stencil_path() -> str:
+    return _path_from_env_or_config(
+        "TOOLING_STENCIL_PATH",
+        "tooling_stencil_path",
+        "D-仓库表格",
+        "2026钢网明细单1月.xlsx",
+    )
+
+
+def get_tooling_fixture_path() -> str:
+    return _path_from_env_or_config(
+        "TOOLING_FIXTURE_PATH",
+        "tooling_fixture_path",
+        "D-仓库表格",
+        "A-所有客户治具明细表（1）.xlsx",
     )
 
 
@@ -422,6 +460,10 @@ def save_config(data: dict) -> dict:
         "warehouse_share_path",
         "warehouse_auto_sync_enabled",
         "warehouse_sync_interval_minutes",
+        "tooling_stencil_path",
+        "tooling_fixture_path",
+        "tooling_auto_sync_enabled",
+        "tooling_sync_interval_minutes",
         "substitution_file_path",
         "process_detail_file_path",
         "engineering_share_base",

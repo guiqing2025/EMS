@@ -1,6 +1,7 @@
 """机型工装登记（钢网 / 波峰治具 / ICT·FCT 测试工装）"""
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -38,6 +39,29 @@ def _link_bom_model(db: Session, internal_code: str, model_code: str) -> Optiona
 
 def _entry_registered(row: Optional[ModelToolingEntry]) -> bool:
     return bool(row and (row.tool_code or "").strip())
+
+
+_SUPPLIER_RE = re.compile(r"供应商[:：]\s*([^；;\n]+)")
+
+
+def extract_supplier_from_remark(remark: Optional[str]) -> str:
+    if not remark:
+        return ""
+    m = _SUPPLIER_RE.search(remark)
+    return m.group(1).strip() if m else ""
+
+
+def _suppliers_from_entries(*rows: Optional[ModelToolingEntry]) -> str:
+    seen: set[str] = set()
+    parts: list[str] = []
+    for row in rows:
+        if not row:
+            continue
+        supplier = extract_supplier_from_remark(row.remark)
+        if supplier and supplier not in seen:
+            seen.add(supplier)
+            parts.append(supplier)
+    return "；".join(parts)
 
 
 def entry_to_dict(row: ModelToolingEntry) -> dict:
@@ -116,6 +140,7 @@ def list_tooling_catalog(
                 "ict_fct_fixture_registered": _entry_registered(ict),
                 "registered_count": registered,
                 "tooling_complete": registered >= 3,
+                "supplier": _suppliers_from_entries(stencil, wave, ict) or None,
             }
         )
     return results

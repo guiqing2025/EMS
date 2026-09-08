@@ -26,7 +26,7 @@
           <el-form-item label="客户">
             <el-select v-model="filters.customer_id" clearable style="width: 140px">
               <el-option label="菲利斯" value="feilisi" />
-              <el-option label="恩玖·鼎雄" value="enjiu" />
+              <el-option label="恩玖" value="enjiu" />
             </el-select>
           </el-form-item>
           <el-form-item>
@@ -51,7 +51,7 @@
             <template #default="{ row }">{{ padSeq(row) }}</template>
           </el-table-column>
           <el-table-column prop="order_qty" label="订单数" width="80" align="right" />
-          <el-table-column prop="customer_name" label="客户" width="100" />
+          <el-table-column prop="customer_name" label="客户/来源表" width="120" show-overflow-tooltip />
           <el-table-column prop="source" label="来源" width="120" show-overflow-tooltip />
           <el-table-column prop="created_by" label="登记人" width="90" />
           <el-table-column prop="remark" label="备注" min-width="100" show-overflow-tooltip />
@@ -69,7 +69,7 @@
         <el-form-item label="客户">
           <el-select v-model="form.customer_id" style="width: 100%" @change="onCustomerPick">
             <el-option label="菲利斯" value="feilisi" />
-            <el-option label="恩玖·鼎雄" value="enjiu" />
+            <el-option label="恩玖" value="enjiu" />
           </el-select>
         </el-form-item>
         <el-form-item label="镭雕日期" required>
@@ -147,7 +147,7 @@ function padSeq(row: LaserBatch) {
 }
 
 function onCustomerPick() {
-  form.customer_name = form.customer_id === 'enjiu' ? '恩玖·鼎雄' : '菲利斯'
+  form.customer_name = form.customer_id === 'enjiu' ? '恩玖' : '菲利斯'
 }
 
 async function load() {

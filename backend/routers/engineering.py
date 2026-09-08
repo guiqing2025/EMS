@@ -36,6 +36,8 @@ from engineering_service import (
 )
 from models import BomLine, BomModel, ModelProcessRoute, PcbGerberPackage, PcbPlacementFile, PcbRefmapFile, SubstitutionRule
 from gerber_sync import (
+    build_gerber_export_zip,
+    gerber_export_content_disposition,
     get_gerber_files,
     get_gerber_meta,
     import_gerber_zip,
@@ -51,15 +53,19 @@ from placement_canonical import (
     delete_refmap_file,
 )
 from placement_sync import (
+    build_placement_export,
     get_placement_lines,
     get_placement_meta,
     import_placement_bytes,
+    placement_export_content_disposition,
 )
 from refmap_preview import render_refmap_page_png
 from refmap_sync import get_refmap_pdf_path, import_refmap_bytes, reaudit_refmap_file
+from tooling_excel_sync import sync_tooling_from_share
 from tooling_service import get_tooling_for_model, list_tooling_catalog, save_tooling
 from process_route_service import (
     PROCESS_STEP_DEFS,
+    delete_route,
     get_route,
     list_routes,
     save_route,
@@ -86,6 +92,8 @@ from schemas import (
     OrderBindBomIn,
     EngReviewActionIn,
     EngReviewInboxOut,
+    EngIssuePrintLogIn,
+    EngIssuePrintLogOut,
     ProcessMapOut,
     ProcessRouteMetaOut,
     ProcessRouteOut,
@@ -100,8 +108,10 @@ from schemas import (
     ToolingCatalogOut,
     ToolingLookupOut,
     ToolingSaveIn,
+    ToolingSyncResult,
     SubstitutionImportConfirmIn,
     SubstitutionImportResult,
+    SubstitutionManualConfirmIn,
     SubstitutionMetaOut,
     SubstitutionParseOut,
     SubstitutionRuleCreateIn,
@@ -114,6 +124,7 @@ from schemas import (
 from substitution_import import (
     build_template_xlsx,
     confirm_import,
+    confirm_manual_sub,
     create_rule,
     delete_rule,
     parse_xlsx_bytes_with_db,
@@ -127,8 +138,22 @@ router = APIRouter(prefix="/api/engineering", tags=["engineering"], dependencies
 
 
 def _require_planner(principal: AuthPrincipal) -> None:
-    if principal.role not in ("admin", "planner"):
+    from eng_push_config import is_eng_full_manager_user
+
+    if is_eng_full_manager_user(principal.username):
+        return
+    if principal.role not in ("admin", "planner", "pmc"):
         raise HTTPException(status_code=403, detail="无工程模块编辑权限")
+
+
+def _require_process_route_edit(principal: AuthPrincipal) -> None:
+    """工序对照保存/同步：管理员、计划、PMC、工程全局管理。"""
+    from eng_push_config import is_eng_full_manager_user
+
+    if is_eng_full_manager_user(principal.username):
+        return
+    if principal.role not in ("admin", "planner", "pmc"):
+        raise HTTPException(status_code=403, detail="无工序对照编辑权限")
 
 
 def _require_eng_import(principal: AuthPrincipal) -> None:
@@ -141,7 +166,7 @@ def _require_eng_audit(principal: AuthPrincipal) -> None:
         raise HTTPException(status_code=403, detail="无工程资料审核权限")
 
 
-ENG_ORDER_DELETE_PASSWORD = "dxgc888"
+ENG_ORDER_DELETE_PASSWORD = "dxgc888"  # 兼容旧引用；实际校验走 ops_secrets
 
 
 class EngOrderDeleteIn(BaseModel):
@@ -153,7 +178,9 @@ class EngOrderDeleteIn(BaseModel):
 
 
 def _require_order_delete_password(password: str) -> None:
-    if (password or "").strip() != ENG_ORDER_DELETE_PASSWORD:
+    from ops_secrets import order_delete_password
+
+    if (password or "").strip() != order_delete_password():
         raise HTTPException(status_code=403, detail="操作密码错误")
 
 
@@ -169,22 +196,38 @@ def _push_review_after_import(
     internal_code: str = "",
     model_code: str = "",
     note: str = "",
-) -> None:
+    allow_auto_approve: bool = True,
+):
     from eng_review_service import submit_bom_for_review, submit_by_model_code
 
     who = _submitter_name(principal)
     if bom_model_id:
-        submit_bom_for_review(db, int(bom_model_id), submitter=who, note=note)
-    elif internal_code and model_code:
-        submit_by_model_code(
+        return submit_bom_for_review(
+            db,
+            int(bom_model_id),
+            submitter=who,
+            note=note,
+            allow_auto_approve=allow_auto_approve,
+        )
+    if internal_code and model_code:
+        bom = submit_by_model_code(
             db,
             internal_code=internal_code.strip().upper(),
             model_code=model_code.strip(),
             submitter=who,
             note=note,
         )
+        # submit_by_model_code 默认允许自动审；BOM 路径请走 bom_model_id
+        return bom
+    return None
 
-def _bom_line_out(line: BomLine, mount: dict[str, str]) -> BomLineOut:
+def _bom_line_out(
+    line: BomLine,
+    mount: dict[str, str],
+    *,
+    substitute_codes: Optional[list] = None,
+    substitute_details: Optional[list] = None,
+) -> BomLineOut:
     return BomLineOut(
         id=line.id,
         bom_model_id=line.bom_model_id,
@@ -205,6 +248,8 @@ def _bom_line_out(line: BomLine, mount: dict[str, str]) -> BomLineOut:
         is_active=bool(getattr(line, "is_active", True)),
         source=getattr(line, "source", None) or "import",
         control_id=getattr(line, "control_id", None),
+        substitute_codes=list(substitute_codes or []),
+        substitute_details=list(substitute_details or []),
     )
 
 
@@ -230,7 +275,10 @@ def _steps_payload(body: ProcessRouteSaveIn) -> dict:
     return {
         "laser_label": body.steps.laser_label,
         "smt": body.steps.smt,
+        "pre_oven_aoi": body.steps.pre_oven_aoi,
         "insert": body.steps.insert,
+        "post_solder": body.steps.post_solder,
+        "post_oven_label": body.steps.post_oven_label,
         "test": body.steps.test,
         "conformal": {
             "enabled": body.steps.conformal_enabled,
@@ -265,7 +313,7 @@ def process_routes_meta(db: Session = Depends(get_db)):
 
 @router.post("/process-routes/sync-now", response_model=ProcessRouteSyncResult)
 def process_routes_sync(db: Session = Depends(get_db), principal: AuthPrincipal = Depends(require_system_auth)):
-    _require_planner(principal)
+    _require_process_route_edit(principal)
     result = sync_from_workbook(db)
     db.commit()
     return ProcessRouteSyncResult(**result)
@@ -327,7 +375,7 @@ def process_route_save(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
-    _require_planner(principal)
+    _require_process_route_edit(principal)
     saved = save_route(
         db,
         body.internal_code,
@@ -340,6 +388,22 @@ def process_route_save(
     )
     db.commit()
     return ProcessRouteOut(**saved)
+
+
+@router.delete("/process-routes/{route_id}")
+def process_route_delete(
+    route_id: int,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """删除入错的机型工序对照整条记录。"""
+    _require_process_route_edit(principal)
+    try:
+        info = delete_route(db, route_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    db.commit()
+    return {"ok": True, "message": f"已删除工序对照 {info.get('internal_code')} · {info.get('model_code')}"}
 
 
 @router.get("/tooling/catalog", response_model=list[ToolingCatalogOut])
@@ -382,6 +446,37 @@ def tooling_save(
         return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/tooling/sync", response_model=ToolingSyncResult)
+def tooling_sync_share(
+    dry_run: bool = Query(False, description="仅解析不写库"),
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """从共享盘钢网/治具明细同步工装登记（覆盖手工；仅 A123/A116/A067/A120）。"""
+    if not (principal.is_warehouse or principal.role == "planner"):
+        raise HTTPException(status_code=403, detail="无工装同步权限")
+    try:
+        result = sync_tooling_from_share(
+            db,
+            dry_run=dry_run,
+            operator=principal.username,
+        )
+        if not dry_run:
+            db.commit()
+        return result
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"共享盘无权访问: {exc}",
+        ) from exc
+    except Exception as exc:
+        logger.exception("工装共享盘同步失败")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"工装同步失败: {exc}") from exc
 
 
 @router.get("/customer-assets", response_model=list[CustomerAssetOut])
@@ -498,7 +593,8 @@ def refmaps_delete(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
-    _require_planner(principal)
+    # 资料员需可清除后重导（邱梦林 dxgc 等）
+    _require_eng_import(principal)
     row = db.query(PcbRefmapFile).filter(PcbRefmapFile.id == file_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="位号图不存在")
@@ -532,6 +628,25 @@ def placements_lines(
     if not row:
         raise HTTPException(status_code=404, detail="坐标文件不存在")
     return get_placement_lines(db, file_id, keyword)
+
+
+@router.get("/placements/{file_id}/export")
+def placements_export(
+    file_id: int,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """导出贴片坐标（只读下载，不影响扫码）。"""
+    _ = principal
+    try:
+        content, filename, media_type = build_placement_export(db, file_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": placement_export_content_disposition(filename)},
+    )
 
 
 @router.post("/placements/import", response_model=PlacementImportResult)
@@ -585,11 +700,21 @@ def placements_delete(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
-    _require_planner(principal)
+    _require_eng_import(principal)
     row = db.query(PcbPlacementFile).filter(PcbPlacementFile.id == file_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="坐标文件不存在")
     delete_placement_file(db, file_id)
+    from eng_review_service import sync_bom_status_after_asset_change
+
+    sync_bom_status_after_asset_change(
+        db,
+        bom_model_id=row.bom_model_id,
+        internal_code=row.internal_code or "",
+        model_code=row.model_code or "",
+        purchase_no=getattr(row, "purchase_no", None) or "",
+        note="已清除贴片坐标",
+    )
     db.commit()
     return {"message": "已清除贴片坐标"}
 
@@ -614,6 +739,25 @@ def gerbers_files(package_id: int, db: Session = Depends(get_db)):
     if not row:
         raise HTTPException(status_code=404, detail="Gerber 资料包不存在")
     return get_gerber_files(db, package_id)
+
+
+@router.get("/gerbers/{package_id}/export")
+def gerbers_export(
+    package_id: int,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """导出 Gerber 压缩包（只读下载，不影响扫码）。"""
+    _ = principal
+    try:
+        content, filename = build_gerber_export_zip(db, package_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={"Content-Disposition": gerber_export_content_disposition(filename)},
+    )
 
 
 @router.post("/gerbers/{package_id}/reaudit", response_model=GerberAuditOut)
@@ -683,9 +827,21 @@ def gerbers_remove_file(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
-    _require_planner(principal)
+    _require_eng_import(principal)
     try:
         result = remove_gerber_file(db, package_id, name)
+        row = db.query(PcbGerberPackage).filter(PcbGerberPackage.id == package_id).first()
+        if row and int(result.get("file_count") or getattr(row, "file_count", 0) or 0) <= 0:
+            from eng_review_service import sync_bom_status_after_asset_change
+
+            sync_bom_status_after_asset_change(
+                db,
+                bom_model_id=row.bom_model_id,
+                internal_code=row.internal_code or "",
+                model_code=row.model_code or "",
+                purchase_no=getattr(row, "purchase_no", None) or "",
+                note="Gerber 文件已删空",
+            )
         db.commit()
         return GerberAuditOut(**result)
     except ValueError as exc:
@@ -698,11 +854,21 @@ def gerbers_delete(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
-    _require_planner(principal)
+    _require_eng_import(principal)
     row = db.query(PcbGerberPackage).filter(PcbGerberPackage.id == package_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Gerber 资料包不存在")
     delete_gerber_package(db, package_id)
+    from eng_review_service import sync_bom_status_after_asset_change
+
+    sync_bom_status_after_asset_change(
+        db,
+        bom_model_id=row.bom_model_id,
+        internal_code=row.internal_code or "",
+        model_code=row.model_code or "",
+        purchase_no=getattr(row, "purchase_no", None) or "",
+        note="已清除 Gerber",
+    )
     db.commit()
     return {"message": "已清除 Gerber 资料"}
 
@@ -742,7 +908,7 @@ def substitution_template(customer_id: str = ""):
     fname = (
         "yonglian_substitution_template.xlsx"
         if profile == "yonglian"
-        else "substitution_template.xlsx"
+        else "鼎雄TDA变更记录模板.xlsx"
     )
     return Response(
         content=content,
@@ -914,13 +1080,21 @@ def list_substitutions(
     page_size: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
+    from sqlalchemy import case
+
     cid = (customer_id or "").strip()
     if not cid:
         return []
     q = (
         db.query(SubstitutionRule)
         .filter(SubstitutionRule.customer_id == cid)
-        .order_by(SubstitutionRule.comp_code.asc(), SubstitutionRule.id.asc())
+        .order_by(
+            case((SubstitutionRule.confirm_status == "pending", 0), else_=1),
+            SubstitutionRule.purchase_no.asc(),
+            SubstitutionRule.parent_code.asc(),
+            SubstitutionRule.comp_code.asc(),
+            SubstitutionRule.id.asc(),
+        )
     )
     pc = (parent_code or "").strip()
     if pc:
@@ -931,6 +1105,7 @@ def list_substitutions(
             (SubstitutionRule.comp_code.like(like))
             | (SubstitutionRule.sub_code.like(like))
             | (SubstitutionRule.parent_code.like(like))
+            | (SubstitutionRule.purchase_no.like(like))
             | (SubstitutionRule.comp_name.like(like))
             | (SubstitutionRule.sub_name.like(like))
         )
@@ -964,6 +1139,30 @@ def update_substitution(
     _require_planner(principal)
     try:
         row = update_rule(db, rule_id, body.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.post("/substitutions/{rule_id}/confirm-manual", response_model=SubstitutionRuleOut)
+def confirm_substitution_manual(
+    rule_id: int,
+    body: SubstitutionManualConfirmIn,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """待确认或已确认替代料：录入/修改替代料号后同步发料单与 BOM。"""
+    _require_planner(principal)
+    try:
+        row = confirm_manual_sub(
+            db,
+            rule_id,
+            sub_code=body.sub_code,
+            sub_name=body.sub_name,
+            sub_spec=body.sub_spec,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
@@ -1057,6 +1256,7 @@ async def models_import(
             principal=principal,
             bom_model_id=bom_id,
             note="已导入 BOM，请审核贴装与资料",
+            allow_auto_approve=False,
         )
     db.commit()
     if result.get("status") != "success":
@@ -1074,7 +1274,7 @@ async def models_import(
     action = "新增" if created else "更新"
     return BomImportResult(
         status="success",
-        message=f"{action} BOM {result.get('model_code')}（订单 {pn}），共 {result.get('lines')} 行，已推送审核",
+        message=f"{action} BOM {result.get('model_code')}（订单 {pn}），共 {result.get('lines')} 行，已送审待审核员处理",
         model_code=result.get("model_code") or "",
         lines=result.get("lines") or 0,
         bom_model_id=result.get("bom_model_id") or 0,
@@ -1146,6 +1346,7 @@ async def models_import_yilanke(
             principal=principal,
             bom_model_id=bom_id,
             note=note,
+            allow_auto_approve=False,
         )
     db.commit()
     if result.get("status") != "success":
@@ -1167,12 +1368,12 @@ async def models_import_yilanke(
         kind = "纯 DIP" if dip_n >= smt_n else "纯 SMT"
         msg = (
             f"{action} BOM {result.get('model_code')}（订单 {pn}），"
-            f"{kind} {result.get('lines')} 行，已推送审核"
+            f"{kind} {result.get('lines')} 行，已送审待审核员处理"
         )
     else:
         msg = (
             f"{action} BOM {result.get('model_code')}（订单 {pn}），"
-            f"合并 SMT {smt_n} + DIP {dip_n} = {result.get('lines')} 行，已推送审核"
+            f"合并 SMT {smt_n} + DIP {dip_n} = {result.get('lines')} 行，已送审待审核员处理"
         )
     return BomImportResult(
         status="success",
@@ -1204,6 +1405,18 @@ def models_clear(
 
 @router.get("/models/{model_id}/export")
 def export_model_bom(model_id: int, db: Session = Depends(get_db)):
+    from io import BytesIO
+    from pathlib import Path
+    import zipfile
+
+    from material_control_service import get_controls_for_purchase
+    from substitution_service import (
+        collect_substitute_details,
+        format_substitute_export_fields,
+        load_warehouse_by_code,
+        reload_substitution_cache_from_db,
+    )
+
     bom = db.query(BomModel).filter(BomModel.id == model_id, BomModel.is_active.is_(True)).first()
     if not bom:
         raise HTTPException(status_code=404, detail="机型不存在")
@@ -1223,8 +1436,25 @@ def export_model_bom(model_id: int, db: Session = Depends(get_db)):
         master_overrides=load_mount_overrides(db, internal_code=bom.internal_code or ""),
         internal_code=bom.internal_code or "",
     )
+
+    cid = (bom.customer_id or "").strip()
+    model_code = bom.model_code or ""
+    purchase_no = getattr(bom, "purchase_no", None) or ""
+    if cid:
+        reload_substitution_cache_from_db(db, cid)
+    stock_by_code = load_warehouse_by_code(db, cid)
+
     line_rows = []
     for line, mount in zip(lines, mounts):
+        details = collect_substitute_details(
+            cid,
+            line.material_code,
+            parent_code=model_code,
+            purchase_no=purchase_no,
+            stock_by_code=stock_by_code,
+        )
+        sub_fields = format_substitute_export_fields(details)
+        is_ctrl = (getattr(line, "source", None) or "") == "control" or getattr(line, "control_id", None)
         line_rows.append({
             "seq": line.seq,
             "material_code": line.material_code,
@@ -1237,19 +1467,64 @@ def export_model_bom(model_id: int, db: Session = Depends(get_db)):
             "position": line.position,
             "process": line.process,
             "remark": line.remark,
+            **sub_fields,
+            "control_mark": "变更" if is_ctrl else "",
         })
+
+    control_rows = []
+    if purchase_no:
+        try:
+            control_rows = get_controls_for_purchase(db, purchase_no, model_code=model_code) or []
+        except Exception:  # noqa: BLE001
+            control_rows = []
+
     bom_dict = {
         "internal_code": bom.internal_code,
         "customer_id": bom.customer_id,
         "customer_name": bom.customer_name,
+        "purchase_no": purchase_no,
         "model_code": bom.model_code,
         "model_name": bom.model_name,
         "model_spec": bom.model_spec,
         "line_count": bom.line_count,
     }
-    content = build_bom_xlsx(bom_dict, line_rows, profile_info=profile_info)
+    xlsx_bytes = build_bom_xlsx(
+        bom_dict, line_rows, profile_info=profile_info, control_rows=control_rows
+    )
+
+    # 有管制 PDF 则打成 zip（xlsx + PDF）；否则仅 xlsx，管制页写「无」
+    pdf_files: list[tuple[str, Path]] = []
+    static_root = Path(__file__).resolve().parent.parent / "static"
+    for ctrl in control_rows:
+        rel = (ctrl.get("attachment_path") or "").strip()
+        if not rel:
+            continue
+        path = static_root / rel
+        if not path.is_file():
+            continue
+        cno = (ctrl.get("control_no") or f"control_{ctrl.get('id') or ''}").strip()
+        fname = (ctrl.get("attachment_name") or path.name).strip() or path.name
+        safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in f"{cno}_{fname}")
+        pdf_files.append((f"管制PDF/{safe}", path))
+
+    if pdf_files:
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("BOM明细.xlsx", xlsx_bytes)
+            for arc, path in pdf_files:
+                zf.write(path, arcname=arc)
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": bom_export_content_disposition(
+                    bom.model_code, as_zip=True
+                )
+            },
+        )
+
     return Response(
-        content=content,
+        content=xlsx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": bom_export_content_disposition(bom.model_code)},
     )
@@ -1276,6 +1551,11 @@ def list_model_lines(model_id: int, db: Session = Depends(get_db)):
     )
     placement_index = load_placement_index(db, bom)
     from material_mount_service import load_mount_overrides
+    from substitution_service import (
+        collect_substitute_details,
+        load_warehouse_by_code,
+        reload_substitution_cache_from_db,
+    )
 
     profile_info, mounts = classify_lines_mount(
         lines,
@@ -1284,12 +1564,38 @@ def list_model_lines(model_id: int, db: Session = Depends(get_db)):
         master_overrides=load_mount_overrides(db, internal_code=bom.internal_code or ""),
         internal_code=bom.internal_code or "",
     )
+    cid = (bom.customer_id or "").strip()
+    model_code = bom.model_code or ""
+    purchase_no = getattr(bom, "purchase_no", None) or ""
+    if cid:
+        reload_substitution_cache_from_db(db, cid)
+    stock_by_code = load_warehouse_by_code(db, cid)
+
+    out_lines = []
+    for line, mount in zip(lines, mounts):
+        details = collect_substitute_details(
+            cid,
+            line.material_code,
+            parent_code=model_code,
+            purchase_no=purchase_no,
+            stock_by_code=stock_by_code,
+        )
+        alts = [d["material_code"] for d in details if d.get("material_code")]
+        out_lines.append(
+            _bom_line_out(
+                line,
+                mount,
+                substitute_codes=alts,
+                substitute_details=details,
+            )
+        )
+
     return BomModelLinesOut(
         mount_profile_override=bom.mount_profile_override or "",
         detected_profile=str(profile_info.get("profile") or "unknown"),
         profile_confidence=str(profile_info.get("confidence") or ""),
         profile_source=str(profile_info.get("source") or "auto"),
-        lines=[_bom_line_out(line, mount) for line, mount in zip(lines, mounts)],
+        lines=out_lines,
         unresolved_mount_count=sum(1 for m in mounts if not m.get("mount_type")),
         eng_review_status=bom.eng_review_status or "",
         eng_review_message=bom.eng_review_message,
@@ -1307,12 +1613,21 @@ def set_model_mount_profile(
     try:
         row = update_bom_mount_profile(db, model_id, body.mount_profile_override)
         from eng_review_service import reopen_bom_review_after_edit
+        from ops_audit_service import write_audit
 
         reopen_bom_review_after_edit(
             db,
             model_id,
             editor=principal.display_name or principal.username,
             note="贴装画像已修改，请重新审核通过",
+        )
+        write_audit(
+            db,
+            action="eng_mount_profile",
+            actor=principal.username or "",
+            target_type="bom_model",
+            target_id=str(model_id),
+            detail={"mount_profile_override": body.mount_profile_override},
         )
         db.commit()
         db.refresh(row)
@@ -1364,6 +1679,39 @@ def get_my_todos(
         username=principal.username,
         internal_code=internal_code,
     )
+
+
+@router.get("/status-board")
+def get_eng_status_board(
+    internal_code: str = "",
+    detail: int = 1,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """工程资料进度看板。
+
+    detail=1：完整明细（缺项清单，较重，仅点开明细时用）
+    detail=0：轻量汇总（仅数量，客户卡片/角标）
+    """
+    from eng_review_service import eng_status_board, eng_status_summary
+
+    _ = principal
+    if int(detail or 0) == 0:
+        return eng_status_summary(db, internal_code=internal_code)
+    return eng_status_board(db, internal_code=internal_code)
+
+
+@router.get("/status-summary")
+def get_eng_status_summary(
+    internal_code: str = "",
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """全客户轻量汇总（一次返回 by_customer，供客户选择页）。"""
+    from eng_review_service import eng_status_summary
+
+    _ = principal
+    return eng_status_summary(db, internal_code=internal_code)
 
 
 @router.post("/todos/{inbox_id}/ack")
@@ -1420,6 +1768,89 @@ def get_model_review_dossier(
         return build_review_dossier(db, model_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/models/{model_id}/issue-print-logs", response_model=list[EngIssuePrintLogOut])
+def list_model_issue_print_logs(
+    model_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    if not principal.can_eng_view:
+        raise HTTPException(status_code=403, detail="无权限")
+    from eng_issue_print_service import list_issue_print_logs
+    from models import BomModel
+
+    bom = db.query(BomModel).filter(BomModel.id == model_id).first()
+    if not bom:
+        raise HTTPException(status_code=404, detail="机型不存在")
+    rows = list_issue_print_logs(db, model_id, limit=limit)
+    return [EngIssuePrintLogOut(**r) for r in rows]
+
+
+@router.post("/models/{model_id}/issue-print-log")
+def post_model_issue_print_log(
+    model_id: int,
+    body: EngIssuePrintLogIn,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """记录发料单打印快照（工序筛选 + 料号清单），供客诉追溯。"""
+    if not principal.can_eng_view:
+        raise HTTPException(status_code=403, detail="无权限")
+    from eng_issue_print_service import record_issue_print_log, resolve_line_key_for_bom
+    from models import BomModel
+    from ops_audit_service import write_audit
+
+    bom = db.query(BomModel).filter(BomModel.id == model_id, BomModel.is_active.is_(True)).first()
+    if not bom:
+        raise HTTPException(status_code=404, detail="机型不存在")
+    materials = [
+        {
+            "material_code": m.material_code,
+            "material_name": m.material_name,
+            "spec": m.spec,
+            "unit": m.unit,
+            "qty_per": m.qty_per,
+            "issue_qty": m.issue_qty,
+            "mount_type": m.mount_type,
+            "mount_side": m.mount_side,
+            "position": m.position,
+        }
+        for m in body.materials
+    ]
+    line_key = (body.line_key or "").strip() or resolve_line_key_for_bom(db, bom)
+    operator = _submitter_name(principal)
+    row = record_issue_print_log(
+        db,
+        bom,
+        process_filter=body.process_filter,
+        stencil_src=body.stencil_src,
+        wave_src=body.wave_src,
+        operator=operator,
+        order_qty=body.order_qty,
+        line_key=line_key,
+        materials=materials,
+    )
+    write_audit(
+        db,
+        action="eng_issue_print",
+        actor=principal.username or "",
+        target_type="bom_model",
+        target_id=str(model_id),
+        detail={
+            "process_filter": body.process_filter,
+            "material_count": len(materials),
+            "purchase_no": bom.purchase_no,
+        },
+    )
+    db.commit()
+    return {
+        "message": "已记录发料打印",
+        "id": row.id,
+        "material_count": row.material_count,
+    }
 
 
 @router.get("/models/{model_id}/same-bom-peers")
@@ -1494,6 +1925,16 @@ def review_approve(
         row = approve_bom_review(
             db, model_id, reviewer=_submitter_name(principal), message=body.message or "审核通过"
         )
+        from ops_audit_service import write_audit
+
+        write_audit(
+            db,
+            action="eng_review_approve",
+            actor=principal.username or "",
+            target_type="bom_model",
+            target_id=str(model_id),
+            detail={"message": body.message or "审核通过"},
+        )
         db.commit()
         return {
             "message": "已审核通过",
@@ -1517,6 +1958,16 @@ def review_reject(
     try:
         row = reject_bom_review(
             db, model_id, reviewer=_submitter_name(principal), message=body.message
+        )
+        from ops_audit_service import write_audit
+
+        write_audit(
+            db,
+            action="eng_review_reject",
+            actor=principal.username or "",
+            target_type="bom_model",
+            target_id=str(model_id),
+            detail={"message": body.message or ""},
         )
         db.commit()
         return {
@@ -1715,4 +2166,39 @@ def export_order_kitting(line_key: str, db: Session = Depends(get_db)):
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": kitting_export_content_disposition(model_code, kit.get("order_qty") or 0)},
+    )
+
+
+@router.get("/audit/data-integrity")
+def get_eng_data_integrity_audit(
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """工程资料自查：发料用量误用 + 全量 BOM 漏料对比。"""
+    if not principal.can_eng_view:
+        raise HTTPException(status_code=403, detail="无权限")
+    from eng_audit_service import run_eng_data_audit
+
+    return run_eng_data_audit(db)
+
+
+@router.get("/audit/data-integrity.xlsx")
+def export_eng_data_integrity_audit(
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_system_auth),
+):
+    """导出工程资料自查 Excel（受影响订单 + 明细 + 建议重打发料单）。"""
+    if not principal.can_eng_view:
+        raise HTTPException(status_code=403, detail="无权限")
+    from eng_audit_service import build_eng_audit_xlsx, run_eng_data_audit
+    from urllib.parse import quote
+
+    audit = run_eng_data_audit(db)
+    content = build_eng_audit_xlsx(audit)
+    ts = (audit.get("generated_at") or "")[:10].replace("-", "")
+    fname = f"工程资料自查_{ts or 'report'}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
     )

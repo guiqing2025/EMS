@@ -11,10 +11,31 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, Optional
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+
+
+def _is_sqlite(db: Session) -> bool:
+    try:
+        return db.get_bind().dialect.name == "sqlite"
+    except Exception:
+        return True
+
+
+def _in_clause(column: str, param: str = "pns") -> str:
+    """SQLite/Postgres 通用的 IN 列表条件（配合 expanding bindparam）。"""
+    return f"{column} IN :{param}"
+
+
+def _expanding_text(sql: str, param: str = "pns"):
+    return text(sql).bindparams(bindparam(param, expanding=True))
+
+
+def _count_int_expr(expr: str = "count(*)") -> str:
+    """避免 Postgres 的 count(*)::int 在 SQLite 上报错。"""
+    return f"CAST({expr} AS INTEGER)"
 
 DEFAULT_BOARD_HOT_DAYS = 60
 BATCH_SIZE = 3000
@@ -174,12 +195,14 @@ def counts_by_purchase_nos(
         return out
     hot = ICT_HOT if kind == "ict" else AOI_HOT
     archive = ICT_ARCHIVE if kind == "ict" else AOI_ARCHIVE
-    sql = text(
+    cnt = _count_int_expr("count(*)")
+    in_pn = _in_clause("purchase_no")
+    sql = _expanding_text(
         f"""
-        SELECT purchase_no, count(*)::int AS n FROM (
-            SELECT purchase_no FROM {hot} WHERE purchase_no = ANY(:pns)
+        SELECT purchase_no, {cnt} AS n FROM (
+            SELECT purchase_no FROM {hot} WHERE {in_pn}
             UNION ALL
-            SELECT purchase_no FROM {archive} WHERE purchase_no = ANY(:pns)
+            SELECT purchase_no FROM {archive} WHERE {in_pn}
         ) t
         WHERE purchase_no IS NOT NULL AND purchase_no <> ''
         GROUP BY purchase_no
@@ -191,11 +214,11 @@ def counts_by_purchase_nos(
         # 归档表尚未创建时退回热表
         db.rollback()
         rows = db.execute(
-            text(
+            _expanding_text(
                 f"""
-                SELECT purchase_no, count(*)::int
+                SELECT purchase_no, {cnt}
                 FROM {hot}
-                WHERE purchase_no = ANY(:pns)
+                WHERE {in_pn}
                 GROUP BY purchase_no
                 """
             ),
@@ -224,6 +247,9 @@ def counts_by_purchase_model(
         return out
     hot = ICT_HOT if kind == "ict" else AOI_HOT
     archive = ICT_ARCHIVE if kind == "ict" else AOI_ARCHIVE
+    cnt = _count_int_expr("count(*)")
+    in_b = _in_clause("b.purchase_no")
+    in_a = _in_clause("a.purchase_no")
 
     def _run(include_archive: bool) -> list:
         archive_part = (
@@ -234,21 +260,21 @@ def counts_by_purchase_model(
                 COALESCE(NULLIF(TRIM(lb.model_code), ''), NULLIF(TRIM(a.model_code), '')) AS model_code
             FROM {archive} a
             LEFT JOIN laser_batches lb ON lb.id = a.laser_batch_id
-            WHERE a.purchase_no = ANY(:pns)
+            WHERE {in_a}
             """
             if include_archive
             else ""
         )
-        sql = text(
+        sql = _expanding_text(
             f"""
-            SELECT purchase_no, upper(replace(model_code, ' ', '')) AS model_key, count(*)::int AS n
+            SELECT purchase_no, upper(replace(model_code, ' ', '')) AS model_key, {cnt} AS n
             FROM (
                 SELECT
                     b.purchase_no,
                     COALESCE(NULLIF(TRIM(lb.model_code), ''), NULLIF(TRIM(b.model_code), '')) AS model_code
                 FROM {hot} b
                 LEFT JOIN laser_batches lb ON lb.id = b.laser_batch_id
-                WHERE b.purchase_no = ANY(:pns)
+                WHERE {in_b}
                 {archive_part}
             ) t
             WHERE purchase_no IS NOT NULL AND purchase_no <> ''
@@ -320,12 +346,19 @@ def purchase_board_stats(
     params: dict[str, Any] = {"pn": pn}
     if customer_id:
         params["cid"] = customer_id
+    cnt = _count_int_expr("count(*)")
+    pass_n = _count_int_expr(
+        "coalesce(sum(CASE WHEN upper(result) = 'PASS' THEN 1 ELSE 0 END), 0)"
+    )
+    fail_n = _count_int_expr(
+        "coalesce(sum(CASE WHEN upper(result) IN ('FAIL','FALL','NG') THEN 1 ELSE 0 END), 0)"
+    )
     sql = text(
         f"""
         SELECT
-          count(*)::int AS total,
-          coalesce(sum(CASE WHEN upper(result) = 'PASS' THEN 1 ELSE 0 END), 0)::int AS pass_n,
-          coalesce(sum(CASE WHEN upper(result) IN ('FAIL','FALL','NG') THEN 1 ELSE 0 END), 0)::int AS fail_n
+          {cnt} AS total,
+          {pass_n} AS pass_n,
+          {fail_n} AS fail_n
         FROM (
           SELECT result FROM {hot} WHERE purchase_no = :pn{cust_sql}
           UNION ALL
@@ -341,9 +374,9 @@ def purchase_board_stats(
             text(
                 f"""
                 SELECT
-                  count(*)::int,
-                  coalesce(sum(CASE WHEN upper(result) = 'PASS' THEN 1 ELSE 0 END), 0)::int,
-                  coalesce(sum(CASE WHEN upper(result) IN ('FAIL','FALL','NG') THEN 1 ELSE 0 END), 0)::int
+                  {cnt},
+                  {pass_n},
+                  {fail_n}
                 FROM {hot}
                 WHERE purchase_no = :pn{cust_sql}
                 """
