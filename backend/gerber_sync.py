@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import tempfile
 import zipfile
@@ -531,7 +532,7 @@ def import_gerber_zip(
                 "message": (
                     f"未找到有效 Gerber 层文件{hint}。"
                     "请上传含 .gtl/.gbl/.gbr 或 Mentor .gdo 等层的制板包；"
-                    "若是永联 PCBA 总包，系统会自动解开其中的 *_FAB.zip / *_SMD.zip。"
+                    "若是含嵌套 FAB/SMD 的 PCBA 总包，系统会自动解开其中的 *_FAB.zip / *_SMD.zip。"
                     "DXF/PDF/装配图不能代替 Gerber。"
                 ),
                 "file_count": 0,
@@ -754,3 +755,48 @@ def _pkg_to_dict(row: PcbGerberPackage) -> dict:
         "synced_at": row.synced_at,
         "updated_at": row.updated_at,
     }
+
+
+def gerber_export_content_disposition(filename: str) -> str:
+    from urllib.parse import quote
+
+    safe = Path(filename or "gerber.zip").name or "gerber.zip"
+    ascii_name = "gerber.zip"
+    return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(safe)}'
+
+
+def build_gerber_export_zip(db: Session, package_id: int) -> tuple[bytes, str]:
+    """从源目录打包 Gerber（只读下载）。源路径不可用时抛出 ValueError。"""
+    row = db.query(PcbGerberPackage).filter(PcbGerberPackage.id == package_id).first()
+    if not row:
+        raise ValueError("Gerber 资料包不存在")
+
+    src = (row.source_path or "").strip()
+    if not src or src.startswith("upload:"):
+        raise ValueError("该 Gerber 为上传导入且未保留源目录，无法再导出；请重新上传")
+
+    pkg_dir = Path(src)
+    if not pkg_dir.is_dir():
+        raise ValueError(f"源目录不存在或不可访问：{src}")
+
+    files = [
+        p
+        for p in sorted(pkg_dir.rglob("*"))
+        if p.is_file() and not p.name.startswith(".")
+    ]
+    if not files:
+        raise ValueError("源目录内没有可导出的文件")
+
+    buf = tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024)
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path in files:
+            arcname = path.relative_to(pkg_dir).as_posix()
+            zf.write(path, arcname)
+    buf.seek(0)
+    content = buf.read()
+    buf.close()
+
+    base = (row.package_name or row.model_code or f"gerber_{package_id}").strip()
+    safe = re.sub(r"[\\/:*?\"<>|]+", "_", base) or f"gerber_{package_id}"
+    filename = f"{safe}.zip" if not safe.lower().endswith(".zip") else safe
+    return content, filename

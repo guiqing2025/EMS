@@ -1,4 +1,4 @@
-"""菲利斯 TTS（生产管理品质信息追溯系统）API 客户端。
+"""TTS（生产管理品质信息追溯系统）API 客户端。
 
 登录页：http://tts.felicitysolar.com:8081/login
 业务 API：http://tts.felicitysolar.com:8890
@@ -21,7 +21,7 @@ DEFAULT_TTS = {
     "username": "dx0101",
     "password": "123456",
     "customer_id": "feilisi",
-    "customer_name": "菲利斯",
+    "customer_name": "客户A",
     "auto_sync_enabled": False,
     "sync_interval_minutes": 60,
     "max_workers": 8,

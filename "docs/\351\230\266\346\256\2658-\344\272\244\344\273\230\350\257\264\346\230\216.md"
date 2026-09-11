@@ -1,0 +1,41 @@
+# 阶段 8 交付说明 — 售后与仓储辅助
+
+## 里程碑 M8
+
+售后两条分支（补发 / 补货）与借样转销售可走通；盘点、调拨可抽查账实。
+
+## 已上线
+
+| 事项 | 能力 |
+|------|------|
+| 8.1 投诉单 | 可关联销售订单 / 发货单；open→closed |
+| 8.2 销售退货 | 从出库/发货下推；确认回库并下调 `shipped_qty` |
+| 8.2 补发 | 确认后退货 → 重建出库+发货确认 |
+| 8.2 补货 | 确认后退货 → 建生产单草稿（挂 SO） |
+| 8.3 借样还入 | 还入可选回库 |
+| 8.3 借样转销售 | 生成销售订单，`status=converted` |
+| 8.4 盘点 | 实盘过账盘盈/盘亏 |
+| 8.4 调拨/出库 | `kind=transfer` 归属间调拨；`kind=out` 库存出库 |
+
+## API
+
+- `/api/aftersales`：complaints、returns（confirm/reissue/replenish）、sample-loans（return/convert）
+- `/api/warehouse-aux`：stocktakes、transfers
+
+## 前端
+
+- `/aftersales/complaint|return|sample`
+- `/warehouse/stocktake`、`/warehouse/transfer`
+
+## 自测
+
+```bash
+cd backend
+EMS_DB=ems.dev.db EMS_USE_SQLITE=1 .venv/bin/python scripts/sim_phase08_aftersales.py
+```
+
+最近一次（2026-09-09）：**通过 10 / 失败 0**。
+
+## 刻意后置
+
+多仓物理仓码分账、销退质检、补货全链路再出货、正式应收冲红、品质 Excel 客诉与业务投诉单深度合并。

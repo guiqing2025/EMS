@@ -86,14 +86,15 @@ def _is_customer_folder(name: str) -> bool:
 def _match_customer(folder_name: str) -> tuple[str, str]:
     name = folder_name.strip()
     aliases = {
-        "菲利斯进销表": ("feilisi", "菲利斯"),
-        "恩玖进销表": ("enjiu", "恩玖·鼎雄"),
-        "华夏恒泰进销表": ("wh_huaxia", "华夏恒泰"),
-        "永联发料单": ("yonglian", "永联"),
-        "源信进销表": ("wh_yuanxin", "源信"),
-        "亿兰科进销表": ("wh_yilanke", "亿兰科"),
-        "亿维艾": ("wh_yiweiai", "亿维艾"),
-        "能系科技": ("wh_nengxi", "能系科技"),
+        # 文件夹名须与共享盘一致；展示名用中性标签
+        "菲利斯进销表": ("feilisi", "客户A"),
+        "恩玖进销表": ("enjiu", "客户B"),
+        "华夏恒泰进销表": ("wh_huaxia", "客户F"),
+        "永联发料单": ("yonglian", "客户C"),
+        "源信进销表": ("wh_yuanxin", "客户E"),
+        "亿兰科进销表": ("wh_yilanke", "客户D"),
+        "亿维艾": ("wh_yiweiai", "客户H"),
+        "能系科技": ("wh_nengxi", "客户I"),
     }
     if name in aliases:
         cid, cname = aliases[name]

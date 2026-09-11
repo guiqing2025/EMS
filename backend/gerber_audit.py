@@ -217,7 +217,7 @@ def audit_gerber_package(package_dir: Path) -> GerberPackageAudit:
         result.message = (
             f"未找到有效 Gerber 层文件{hint}。"
             "请上传含 .gtl/.gbl/.gbr 或 Mentor .gdo 等层的制板压缩包；"
-            "永联资料若在 *_FAB.zip 内，请直接上传 PCBA/FAB 包（系统会解嵌套）。"
+            "资料若在 *_FAB.zip 内，请直接上传 PCBA/FAB 包（系统会解嵌套）。"
             "DXF/PDF 不能代替 Gerber"
         )
         return result

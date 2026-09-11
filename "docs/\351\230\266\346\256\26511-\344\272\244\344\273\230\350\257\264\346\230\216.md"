@@ -1,0 +1,40 @@
+# 阶段 11 交付说明 — PMC 催办 / SRM 关闭 / UAT
+
+## 里程碑 M11
+
+销售订单驱动的全程催办替代旧 SRM PO 催办；旧同步默认关闭；附录 A 全绿。
+
+## 已上线
+
+| 事项 | 能力 |
+|------|------|
+| 11.1 PMC 催办 | `pmc_board`：SO 三线计划行数、生产单、出库/发货、alerts/urgency；`pmc_urge` 写备注尾注 |
+| 11.2 SRM 同步 | `DEFAULT_CONFIG` / `srm_config(.example).json` 默认 `auto_sync_enabled=false`；可手动再开作对照 |
+| 11.3 切换说明 | 见下文；权限沿用计划模块角色 + wgq/dx001 |
+| 11.4 附录 A | A34→完成；A1–A34 均为完成/部分完成（无「未做」） |
+
+## API
+
+- `GET /api/planning/pmc-board`
+- `POST /api/planning/pmc-board/{so_id}/urge` body `{ "note": "..." }`
+
+## 前端
+
+菜单「计划 → PMC 催办」→ `/planning/pmc-board`
+
+## 切换说明（简）
+
+1. 新单走销售订单 → MRP → 三线；PMC 在催办页盯进度。  
+2. 旧 SRM 自动拉单默认关闭；需要对照时在系统配置中临时打开 `auto_sync_enabled`。  
+3. 登录与角色：PMC/计划相关角色即可访问催办与计划 API。
+
+## 自测
+
+```bash
+cd backend
+EMS_DB=ems.dev.db EMS_USE_SQLITE=1 .venv/bin/python scripts/sim_phase11_pmc.py
+```
+
+（需 uvicorn `:8001` 同库。）
+
+最近一次（2026-09-09）：**通过 10 / 失败 0**。

@@ -12,7 +12,7 @@
     "12:05",
     "17:35"
   ],
-  "auto_sync_enabled": true,
+  "auto_sync_enabled": false,
   "login_username": "admin",
   "login_password": "CHANGE_ME",
   "dashboard_password": "CHANGE_ME",
@@ -37,7 +37,7 @@
     {
       "internal_code": "A123",
       "customer_id": "feilisi",
-      "name": "菲利斯 (模板)",
+      "name": "工程客户模板-A123",
       "bom_folder": "A123客户最新资料",
       "asset_folders": [
         "A123"
@@ -67,7 +67,7 @@
     {
       "internal_code": "A116",
       "customer_id": "enjiu",
-      "name": "恩玖·鼎雄 (模板)",
+      "name": "工程客户模板-A116",
       "bom_folder": "A116-NJ",
       "rules": {
         "model_key_regex": "^(0\\d{7,8}|99\\d{6,8})",
@@ -104,7 +104,7 @@
     {
       "internal_code": "A067",
       "customer_id": "yonglian",
-      "name": "永联 (模板)",
+      "name": "工程客户模板-A067",
       "bom_folder": "A067-YL",
       "asset_folders": [
         "A067-YL"
@@ -137,7 +137,7 @@
         "manual_daeae675",
         "wh_yilanke"
       ],
-      "name": "亿兰科 (模板)",
+      "name": "工程客户模板-A120",
       "bom_folder": "A120客户最新资料",
       "asset_folders": [
         "A120"
@@ -170,7 +170,7 @@
         "manual_a58399fe",
         "wh_yuanxin"
       ],
-      "name": "源信 (模板)",
+      "name": "工程客户模板-A114",
       "bom_folder": "A114客户最新资料",
       "asset_folders": [
         "A114"
@@ -206,7 +206,7 @@
         "hxht",
         "manual_36fec023"
       ],
-      "name": "华夏恒泰 (模板)",
+      "name": "工程客户模板-A137",
       "bom_folder": "A137客户最新资料",
       "asset_folders": [
         "A137"
@@ -236,7 +236,7 @@
     {
       "internal_code": "A111",
       "customer_id": "manual_b47e9bc2",
-      "name": "苏州特尔斯特 (模板)",
+      "name": "工程客户模板-A111",
       "bom_folder": "A111客户最新资料",
       "asset_folders": [
         "A111"
@@ -275,9 +275,9 @@
   "customers": [
     {
       "id": "feilisi",
-      "name": "菲利斯",
+      "name": "客户模板-feilisi",
       "api_type": "v1",
-      "srm_base_url": "http://YOUR_SRM_HOST",
+      "srm_base_url": "",
       "api_path": "",
       "login_name": "",
       "password": "",
@@ -288,9 +288,9 @@
     },
     {
       "id": "enjiu",
-      "name": "恩玖·鼎雄",
+      "name": "客户模板-enjiu",
       "api_type": "v2",
-      "srm_base_url": "http://YOUR_SRM_HOST",
+      "srm_base_url": "",
       "api_path": "/adpweb",
       "login_name": "",
       "password": "",
@@ -301,9 +301,9 @@
     },
     {
       "id": "yonglian",
-      "name": "永联",
+      "name": "客户模板-yonglian",
       "api_type": "kingdee",
-      "srm_base_url": "http://YOUR_SRM_HOST",
+      "srm_base_url": "",
       "api_path": "/k3cloud",
       "login_name": "",
       "password": "",
@@ -314,9 +314,9 @@
     },
     {
       "id": "yilanke",
-      "name": "亿兰科",
+      "name": "客户模板-yilanke",
       "api_type": "yilanke_mom",
-      "srm_base_url": "http://YOUR_SRM_HOST",
+      "srm_base_url": "",
       "api_path": "",
       "login_name": "",
       "password": "",
@@ -327,7 +327,7 @@
     },
     {
       "id": "huaxia_hengtai",
-      "name": "华夏恒泰",
+      "name": "客户模板-huaxia_hengtai",
       "api_type": "manual",
       "srm_base_url": "",
       "api_path": "",
@@ -340,7 +340,7 @@
     },
     {
       "id": "manual_b47e9bc2",
-      "name": "苏州特尔斯特",
+      "name": "客户模板-manual_b47e9bc2",
       "api_type": "manual",
       "srm_base_url": "",
       "api_path": "",
@@ -557,7 +557,7 @@
     "username": "",
     "password": "",
     "customer_id": "feilisi",
-    "customer_name": "菲利斯",
+    "customer_name": "未配置客户",
     "auto_sync_enabled": false,
     "sync_interval_minutes": 60,
     "max_workers": 8

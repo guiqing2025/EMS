@@ -1,0 +1,51 @@
+# 阶段 3 交付说明 — 计划中枢 MPS/MRP/APS
+
+## 里程碑 M3
+
+一张已确认销售订单（可含备货单）→ 一键生成 **采购 / 生产 / 委外** 三类计划草案；销售单状态推进为 `planning`。
+
+## 已上线
+
+| 事项 | 能力 |
+|------|------|
+| 3.1 需求输入 | 已确认/计划中的销售行、备货行；客户预告（确认后可勾选纳入）；采购预告登记 |
+| 3.2 库存预警 | 库存产品 `safety_qty` vs 仓库可用量缺口列表 |
+| 3.3 MRP 展开 | **单层** BOM（`bom_model_id` 或按成品料号匹配）；毛需求 − 可用量 = 缺口；替代/多层留后 |
+| 3.4/3.5 三类计划 | 成品→生产计划；元件缺口→采购计划；工序含「委外」→委外计划；可确认/下达 |
+| 3.6 APS | 一期说明：生成后到 SMT/DIP 排产挂单 |
+| 3.7 PMC 看板 | MRP 页内销售单三线计划行数总览 |
+
+## API
+
+前缀：`/api/planning`
+
+- `POST /mrp/preview`、`POST /mrp/generate`、`GET /mrp/runs`
+- `GET /purchase-plans|production-plans|outsource-plans` + `POST …/status`
+- `GET/POST /customer-forecasts`、`/purchase-forecasts` + status
+- `GET /stock-warnings`、`GET /pmc-board`
+
+## 前端
+
+- `/planning/mrp` — 预览/生成 + 运算历史 + PMC
+- `/planning/purchase-plan`、`/planning/production-plan`、`/planning/outsource-plan`
+- `/planning/stock-warning`、`/planning/customer-forecast`、`/planning/purchase-forecast`
+- 原 `/scheduling/master-plan` 重定向到生产计划
+
+## 自测
+
+```bash
+cd backend
+EMS_DB=ems.dev.db EMS_USE_SQLITE=1 .venv/bin/python scripts/sim_phase03_mrp.py
+```
+
+最近一次（2026-09-09）：**通过 12 / 失败 0**。
+
+## 建议界面路径
+
+1. 销售订单确认并绑 BOM → **计划 → MPS/MRP/APS** → 预览 → **生成三类计划**
+2. 到采购/生产/委外计划页确认或下达
+3. 主数据给成品设安全库存 → **库存预警** 看缺口
+
+## 刻意后置
+
+多层 BOM 递归、替代料净需求、在途占用全链路、APS 产能日历、计划下推采购单/生产单（阶段 4–6）。

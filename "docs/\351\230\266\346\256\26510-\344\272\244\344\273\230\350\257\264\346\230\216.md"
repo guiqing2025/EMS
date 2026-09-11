@@ -1,0 +1,41 @@
+# 阶段 10 交付说明 — 总账与月末
+
+## 里程碑 M10
+
+可完成一个月结演示：开账 → 业务自动凭证 → 审核过账 →（成本/折旧）→ 损益结转 → 关账。
+
+## 已上线
+
+| 事项 | 能力 |
+|------|------|
+| 10.1 科目/期初 | 精简科目种子；期初凭证借银行存款/贷实收资本 |
+| 10.2 自动凭证 | 采购入库、委外入库、发货、付款、收款过账后幂等生成草稿凭证 |
+| 10.3 审核过账 | draft→reviewed→posted；过账更新科目余额；关账禁改 |
+| 10.4 成本 | 简版生产成本结转（借生产成本/贷原材料） |
+| 10.5 固资 | 登记购置凭证 + 直线法月折旧 |
+| 10.6 月末 | 调汇（无外币跳过）、损益结转、关账并开下期 |
+
+## API
+
+前缀：`/api/finance/gl`
+
+- `/bootstrap`、`/accounts`、`/periods`、`/vouchers`、`…/review|post`
+- `/cost-accrual`、`/assets`、`/assets/{id}/depreciate`
+- `/fx-adjust`、`/close-pnl`、`/close-period`
+
+## 前端
+
+`/finance/gl`
+
+## 自测
+
+```bash
+cd backend
+EMS_DB=ems.dev.db EMS_USE_SQLITE=1 .venv/bin/python scripts/sim_phase10_gl.py
+```
+
+最近一次（2026-09-09）：**通过 13 / 失败 0**。
+
+## 刻意后置
+
+多币种调汇、标准成本/WIP、无形摊销台账、金蝶凭证导出对接。

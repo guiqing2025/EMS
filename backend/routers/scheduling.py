@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/scheduling", tags=["scheduling"], dependencies=[
 
 
 def _require_planner(principal: AuthPrincipal) -> None:
-    if principal.role not in ("admin", "planner"):
+    if principal.role not in ("admin", "planner", "pmc"):
         raise HTTPException(status_code=403, detail="无排产模块权限")
 
 

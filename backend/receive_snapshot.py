@@ -1,4 +1,4 @@
-"""看板收货量日快照与月度汇总（菲利斯 / 恩玖 / 永联 / 亿兰科）。"""
+"""看板收货量日快照与月度汇总。"""
 
 from __future__ import annotations
 
@@ -18,14 +18,10 @@ from models import ReceiveQtyEvent, ReceiveQtySnapshot, SrmOrder, SyncLog
 logger = logging.getLogger(__name__)
 
 TZ_SHANGHAI = ZoneInfo("Asia/Shanghai")
-BOARD_CUSTOMERS = (
-    ("feilisi", "菲利斯"),
-    ("enjiu", "恩玖·鼎雄"),
-    ("yonglian", "永联"),
-    ("yilanke", "亿兰科"),
-)
+# 景立创部署：不预置外部客户名；有真实客户数据后再由配置/业务接入
+BOARD_CUSTOMERS: tuple[tuple[str, str], ...] = ()
 BOARD_CUSTOMER_IDS = [cid for cid, _ in BOARD_CUSTOMERS]
-# 订单/事件里可能出现的别名 → 看板规范客户 id
+# 订单/事件里可能出现的别名 → 看板规范客户 id（保留映射，当前看板客户为空时不生效）
 BOARD_CUSTOMER_ALIASES = {
     "manual_daeae675": "yilanke",
     "wh_yilanke": "yilanke",
@@ -33,7 +29,7 @@ BOARD_CUSTOMER_ALIASES = {
     "a116": "enjiu",
     "a120": "yilanke",
 }
-# 无 ASN/发货单日粒度时，用订单累计收货按采购日挂月（永联金蝶、亿兰科手工）
+# 无 ASN/发货单日粒度时，用订单累计收货按采购日挂月
 ORDER_BALANCE_BOARD_IDS = frozenset({"yonglian", "yilanke"})
 
 
@@ -515,7 +511,7 @@ def build_receive_board(db: Session) -> dict[str, Any]:
                 monthly_acc[cid][ym]["qty"] += qty
                 monthly_acc[cid][ym]["amount"] += amount
         note = (
-            f"底层：菲利斯 ASN 收货日；恩玖发货单收货；永联/亿兰科按订单累计收货挂采购月。"
+            f"底层：按客户收货事件汇总。"
             f"金额=出货数量×含税单价。当月接单=采购日落在本月的订单含税金额。"
             f"月度自 {history_start_ym} 起至 {chart_end_ym}。"
         )
@@ -588,7 +584,7 @@ def build_receive_board(db: Session) -> dict[str, Any]:
         )
         if "已回退日快照" not in note:
             note = (
-                f"底层：菲利斯 ASN；恩玖发货单；永联/亿兰科订单累计收货按采购月。"
+                f"底层：按客户收货事件汇总。"
                 f"金额=出货数量×含税单价。月度自 {history_start_ym} 起至 {chart_end_ym}。"
             )
 

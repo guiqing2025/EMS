@@ -195,7 +195,7 @@ def find_laser_batch_for_barcode(db: Session, barcode: str) -> Optional[LaserBat
     parsed = parse_pcba_barcode(barcode)
     if not parsed or parsed.get("seq") is None:
         return None
-    # 恩玖贴码：barcode_prefix(12) + 流水落入区间
+    # 贴码（前缀+流水）：barcode_prefix(12) + 流水落入区间
     if parsed.get("kind") == "enjiu_manual":
         prefix = (parsed.get("barcode_prefix") or "").strip()
         if not prefix:
@@ -300,7 +300,7 @@ def _upsert_enjiu_print_batch(
         return existing
     row = LaserBatch(
         customer_id="enjiu",
-        customer_name="恩玖·鼎雄",
+        customer_name="客户B",
         laser_date=laser_date,
         model_code=model_code,
         model_mid=mid,
@@ -343,7 +343,7 @@ def _parse_feilisi_d0_flow_range(
     *,
     inherit: Optional[tuple[str, str, str]] = None,
 ) -> Optional[tuple[str, str, str, int, int]]:
-    """菲利斯打印登记流水 → (model_mid, model_ver, laser_date, seq_from, seq_to)。
+    """客户A打印登记流水 → (model_mid, model_ver, laser_date, seq_from, seq_to)。
 
     主形式：D02002700726011780001-85500 / DS5000170225122900001-00500
     补打仅流水：81214-81700（需 inherit 主段的 mid/ver/date）
@@ -426,7 +426,7 @@ def _upsert_feilisi_print_batch(
         return existing
     row = LaserBatch(
         customer_id="feilisi",
-        customer_name="菲利斯",
+        customer_name="客户A",
         laser_date=laser_date,
         model_code=model_code,
         model_mid=use_mid,
@@ -450,10 +450,10 @@ def import_feilisi_print_barcode_register(
     db: Session,
     path: str | Path | None = None,
     *,
-    sheet_name: str = "菲利斯",
+    sheet_name: str = "菲利斯",  # 共享盘工作表原名
     created_by: str = "excel",
 ) -> dict[str, Any]:
-    """导入共享盘「打印条码登记表」菲利斯 sheet → laser_batches。"""
+    """导入共享盘「打印条码登记表」对应 sheet → laser_batches。"""
     xlsx = Path(path) if path else resolve_print_barcode_register_path()
     wb = load_workbook(xlsx, data_only=True)
     if sheet_name not in wb.sheetnames:
@@ -571,10 +571,10 @@ def import_enjiu_print_barcode_register(
     db: Session,
     path: str | Path | None = None,
     *,
-    sheet_name: str = "恩玖-鼎雄",
+    sheet_name: str = "恩玖-鼎雄",  # 共享盘工作表原名
     created_by: str = "excel",
 ) -> dict[str, Any]:
-    """导入共享盘「打印条码登记表」恩玖-鼎雄 sheet → laser_batches（含 barcode_prefix）。"""
+    """导入共享盘「打印条码登记表」对应 sheet → laser_batches（含 barcode_prefix）。"""
     xlsx = Path(path) if path else resolve_print_barcode_register_path()
     wb = load_workbook(xlsx, data_only=True)
     if sheet_name not in wb.sheetnames:
@@ -713,7 +713,7 @@ def import_laser_excel(
     path: str | Path,
     *,
     customer_id: str = "feilisi",
-    customer_name: str = "菲利斯",
+    customer_name: str = "客户A",
     created_by: str = "excel",
 ) -> dict[str, Any]:
     wb = load_workbook(path, data_only=True)
@@ -852,3 +852,17 @@ def boards_for_purchase(
         ],
         "items": items,
     }
+
+
+def resolve_packing_line_by_laser(db, barcode: str = "", **_kwargs):
+    """开发补齐：按镭雕登记尝试匹配订单/批次。"""
+    batch = find_laser_batch_for_barcode(db, barcode or "")
+    if not batch:
+        return None, None, "未匹配到镭雕批次"
+    return getattr(batch, "purchase_no", None) or getattr(batch, "order_no", None), batch, None
+
+
+def filter_orders_by_laser_register(db, orders, *, preserve_keyword: str = ""):
+    """开发补齐：无额外过滤，原样返回。"""
+    _ = (db, preserve_keyword)
+    return list(orders or [])

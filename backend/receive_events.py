@@ -1,4 +1,4 @@
-"""从菲利斯 ASN / 恩玖发货单明细拉取带日期的收货事件，供看板月度对比。"""
+"""从客户A ASN / 客户B发货单明细拉取带日期的收货事件，供看板月度对比。"""
 
 from __future__ import annotations
 
@@ -117,7 +117,7 @@ async def sync_feilisi_asn_events(
         )
     n = _upsert_events(db, rows)
     db.commit()
-    logger.info("菲利斯 ASN 收货事件 %s~%s 写入 %s 行（源 %s）", date_from, date_to, n, len(lines))
+    logger.info("客户A ASN 收货事件 %s~%s 写入 %s 行（源 %s）", date_from, date_to, n, len(lines))
     return n
 
 
@@ -290,11 +290,11 @@ async def sync_enjiu_delivery_events(
                 )
             except httpx.TimeoutException as exc:
                 raise TimeoutError(
-                    f"恩玖发货单导出超时 {w0}~{w1}（单月上限 {ENJIU_EXPORT_TIMEOUT.read}s）"
+                    f"客户B发货单导出超时 {w0}~{w1}（单月上限 {ENJIU_EXPORT_TIMEOUT.read}s）"
                 ) from exc
             chunk = _parse_enjiu_delivery_export(content)
             logger.info(
-                "恩玖发货单导出分片 %s~%s bytes=%s rows=%s",
+                "客户B发货单导出分片 %s~%s bytes=%s rows=%s",
                 w0,
                 w1,
                 len(content),
@@ -320,7 +320,7 @@ async def sync_enjiu_delivery_events(
     n = _upsert_events(db, parsed)
     db.commit()
     logger.info(
-        "恩玖发货单收货事件 %s~%s 写入 %s 行（分片 %s）",
+        "客户B发货单收货事件 %s~%s 写入 %s 行（分片 %s）",
         date_from,
         date_to,
         n,
@@ -350,13 +350,13 @@ async def sync_receive_events(
         feilisi_n = await sync_feilisi_asn_events(db, date_from=start, date_to=end)
     except Exception as exc:
         logger.exception("菲利斯收货事件拉取失败")
-        errors.append(f"菲利斯: {exc or type(exc).__name__}")
+        errors.append(f"客户A: {exc or type(exc).__name__}")
 
     try:
         enjiu_n = await sync_enjiu_delivery_events(db, date_from=start, date_to=end)
     except Exception as exc:
         logger.exception("恩玖收货事件拉取失败")
-        errors.append(f"恩玖: {exc or type(exc).__name__}")
+        errors.append(f"客户B: {exc or type(exc).__name__}")
 
     result = {
         "date_from": start,

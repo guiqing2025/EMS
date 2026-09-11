@@ -22,6 +22,15 @@ INBOUND_SOURCE_LABELS = {
     "excel_sync": "共享盘同步",
     "return": "退料入库",
     "customer_return": "退客出库",
+    "purchase": "采购入库",
+    "production": "成品入库",
+    "outsource": "委托入库",
+}
+
+OUTBOUND_SOURCE_LABELS = {
+    "sales": "销售出库",
+    "transfer": "调拨出库",
+    "other": "其他出库",
 }
 
 
@@ -69,6 +78,35 @@ def record_inbound(
     )
     db.flush()
     return row
+
+
+def record_outbound(
+    db: Session,
+    material: WarehouseMaterial,
+    qty: float,
+    source: str,
+    operator: Optional[str] = None,
+    remark: Optional[str] = None,
+    ref_no: Optional[str] = None,
+) -> None:
+    """销售等出库：扣可用量并记 ledger（qty_delta 为负）。"""
+    if qty <= 0:
+        raise ValueError("出库数量须大于 0")
+    avail = round(float(material.qty or 0) - float(material.locked_qty or 0), 4)
+    if qty > avail + 1e-6:
+        raise ValueError(f"{material.material_code} 可用库存不足（可用 {avail}）")
+    material.qty = round(float(material.qty or 0) - qty, 4)
+    material.updated_at = datetime.utcnow()
+    _append_ledger(
+        db,
+        material,
+        "sales_out" if source == "sales" else "stock_out",
+        -qty,
+        ref_no=ref_no,
+        operator=operator,
+        remark=remark or OUTBOUND_SOURCE_LABELS.get(source, source),
+    )
+    db.flush()
 
 
 def _today_prefix(prefix: str) -> str:

@@ -82,56 +82,14 @@ def invalidate_config_cache() -> None:
     global _config_cache
     _config_cache = None
 
-DEFAULT_CUSTOMERS = [
-    {
-        "id": "feilisi",
-        "name": "菲利斯",
-        "api_type": "v1",
-        "srm_base_url": "http://139.159.240.251:19190",
-        "api_path": "",
-        "login_name": "FL00676",
-        "password": "DX123456",
-        "enabled": True,
-    },
-    {
-        "id": "enjiu",
-        "name": "恩玖·鼎雄",
-        "api_type": "v2",
-        "srm_base_url": "http://218.17.126.115:60801",
-        "api_path": "/adpweb",
-        "login_name": "100246",
-        "password": "123456789",
-        "enabled": True,
-    },
-    {
-        "id": "yonglian",
-        "name": "永联",
-        "api_type": "kingdee",
-        "srm_base_url": "http://k3.szwinline.com:8880",
-        "api_path": "/k3cloud",
-        "acct_id": "5d6dce3c732bc4",
-        "entry_role": "SRM",
-        "login_name": "07.01.0089",
-        "password": "dx123456**",
-        "enabled": True,
-    },
-    {
-        "id": "yilanke",
-        "name": "亿兰科",
-        "api_type": "manual",
-        "srm_base_url": "",
-        "api_path": "",
-        "login_name": "",
-        "password": "",
-        "enabled": True,
-    },
-]
+# 开发/出厂默认不预置任何真实客户；由本机 srm_config.json 配置
+DEFAULT_CUSTOMERS: list = []
 
 DEFAULT_CONFIG = {
     "sync_interval_minutes": 15,
     "sync_daily_hour": 9,
     "sync_daily_minute": 0,
-    "auto_sync_enabled": True,
+    "auto_sync_enabled": False,
     "login_username": "sysadmin",
     "login_password": "jb140313!",
     "dashboard_password": "140313",
@@ -156,86 +114,7 @@ DEFAULT_CONFIG = {
     "laser_print_register_path": "",
     # 工程资料：齐套且文件审核无失败时自动通过（客户 rules.workflow.auto_approve 可单独关闭）
     "eng_auto_review_enabled": True,
-    "engineering_customers": [
-        {
-            "internal_code": "A123",
-            "customer_id": "feilisi",
-            "name": "菲利斯",
-            "bom_folder": "A123客户最新资料",
-            "asset_folders": ["A123"],
-            "rules": {
-                "model_key_regex": r"1\d{2}-\d{6}-\d{2}",
-                "bom_parse_profile": "feilisi",
-                "assets_scope": "order",
-                "checklist": {
-                    "bom": True,
-                    "placement": True,
-                    "gerber": False,
-                    "refmap": False,
-                    "mount_resolved": True,
-                },
-            },
-        },
-        {
-            "internal_code": "A116",
-            "customer_id": "enjiu",
-            "name": "恩玖·鼎雄",
-            "bom_folder": "A116-NJ",
-            "rules": {
-                "model_key_regex": r"^(0\d{7,8}|99\d{6,8})",
-                "bom_parse_profile": "enjiu",
-                "assets_scope": "order",
-                "model_code_variants": [
-                    {"from_prefix": "03019", "to_prefix": "03029"},
-                    {"from_prefix": "03029", "to_prefix": "03019"},
-                ],
-                "checklist": {
-                    "bom": True,
-                    "placement": True,
-                    "gerber": False,
-                    "refmap": False,
-                    "mount_resolved": True,
-                },
-            },
-        },
-        {
-            "internal_code": "A067",
-            "customer_id": "yonglian",
-            "name": "永联",
-            "bom_folder": "A067-YL",
-            "asset_folders": ["A067-YL"],
-            "rules": {
-                "model_key_regex": r"^(91\.\d{4}\.\d+|03\.\d{2}\.\d+)",
-                "bom_parse_profile": "yonglian",
-                "checklist": {
-                    "bom": True,
-                    "placement": True,
-                    "gerber": False,
-                    "refmap": False,
-                    "mount_resolved": True,
-                },
-            },
-        },
-        {
-            "internal_code": "A120",
-            "customer_id": "yilanke",
-            "customer_id_aliases": ["manual_daeae675", "wh_yilanke"],
-            "name": "亿兰科",
-            "bom_folder": "A120客户最新资料",
-            "asset_folders": ["A120"],
-            "rules": {
-                "model_key_regex": r"^(3001-\d+[A-Za-z]?)",
-                "bom_parse_profile": "yilanke",
-                "checklist": {
-                    "bom": True,
-                    "placement": True,
-                    "gerber": False,
-                    "refmap": False,
-                    "mount_resolved": True,
-                },
-            },
-        },
-    ],
+    "engineering_customers": [],
     "customers": DEFAULT_CUSTOMERS,
 }
 
@@ -264,23 +143,9 @@ def _normalize_customers(customers: list) -> list:
 
 
 def _migrate_legacy_config(saved: dict) -> dict:
-    if saved.get("customers"):
-        return saved
-    legacy = {
-        "id": "feilisi",
-        "name": "菲利斯",
-        "api_type": "v1",
-        "srm_base_url": saved.get("srm_base_url", DEFAULT_CUSTOMERS[0]["srm_base_url"]),
-        "api_path": "",
-        "login_name": saved.get("login_name", DEFAULT_CUSTOMERS[0]["login_name"]),
-        "password": saved.get("password", DEFAULT_CUSTOMERS[0]["password"]),
-        "enabled": True,
-    }
-    customers = [legacy]
-    for item in DEFAULT_CUSTOMERS:
-        if item["id"] != "feilisi":
-            customers.append(deepcopy(item))
-    saved["customers"] = customers
+    # 无预置客户：缺 customers 时写空列表，不注入历史客户模板
+    if "customers" not in saved or saved.get("customers") is None:
+        saved["customers"] = []
     return saved
 
 
@@ -365,7 +230,7 @@ def get_hr_roster_path() -> str:
         "HR_ROSTER_PATH",
         "hr_roster_path",
         "B-行政 人事资料",
-        "鼎雄员工花名册.xlsx",
+        "员工花名册.xlsx",
     )
 
 
@@ -511,3 +376,29 @@ def save_config(data: dict) -> dict:
         json.dump(current, f, ensure_ascii=False, indent=2)
     invalidate_config_cache()
     return load_config()
+
+
+def expand_customer_ids_for_filter(customer_id: str = "") -> list[str]:
+    """把客户 ID 展开为自身 + 别名，供订单/工程筛选。"""
+    cid = (customer_id or "").strip()
+    if not cid:
+        return []
+    out = [cid]
+    cust = get_customer(cid)
+    if cust:
+        for alias in cust.get("customer_id_aliases") or []:
+            a = str(alias).strip()
+            if a and a not in out:
+                out.append(a)
+    # 反向：若传入的是别名，找回主 ID
+    for item in get_enabled_customers() or []:
+        aliases = [str(a).strip() for a in (item.get("customer_id_aliases") or [])]
+        if cid in aliases or cid == str(item.get("id") or "").strip():
+            main = str(item.get("id") or "").strip()
+            if main and main not in out:
+                out.insert(0, main)
+            for a in aliases:
+                if a and a not in out:
+                    out.append(a)
+    return out
+

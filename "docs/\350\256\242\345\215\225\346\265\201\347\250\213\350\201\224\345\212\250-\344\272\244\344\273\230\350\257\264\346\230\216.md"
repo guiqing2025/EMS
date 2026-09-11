@@ -1,0 +1,32 @@
+# 订单流程联动 — 交付说明
+
+## 问题
+
+原先各菜单页可独立开单，但操作体感是「菜单孤岛」，不像流程图箭头顺序联动。
+
+## 交付
+
+| 项 | 说明 |
+|----|------|
+| 流程链聚合 | `GET /api/sales/sales-orders/{id}/flow-chain` |
+| 一键下推 | `POST /api/sales/sales-orders/{id}/push/{step}` |
+| 工作台 | 菜单 **销售 → 订单流程** → `/sales/flow`；业务/PMC/计划默认首页 |
+| 回链 | 销售/计划/采购/生产/委外/出库/发货页可回到流程台 |
+
+### 支持的 push step
+
+`confirm_so` → `mrp` → `confirm_plans` → `push_execute` / `push_purchase|production|outsource` → `issue_from_so` → `post_issue` → `delivery_from_issue` → `confirm_delivery`
+
+## 自测
+
+```bash
+cd backend
+EMS_DB=ems.dev.db EMS_USE_SQLITE=1 .venv/bin/python scripts/sim_phase_flow_chain.py
+```
+
+最近一次：**通过 16 / 失败 0**。
+
+## 用法
+
+1. 打开「订单流程」，选一张销售订单（或从销售订单行点「流程」）。
+2. 只点右侧高亮的下一步按钮，按图推进，无需手填下游单据 ID。

@@ -1,4 +1,4 @@
-"""替代料人工导入：标准 XLSX / 旧菲利斯表 / 图片 OCR。"""
+"""替代料人工导入：标准 XLSX / 旧客户A表 / 图片 OCR。"""
 from __future__ import annotations
 
 import io
@@ -34,7 +34,7 @@ TEMPLATE_HEADERS = [
     "备注",
 ]
 
-# 永联委外替代料表（子项=BOM 原料，投产=实际发料/替代）
+# 客户C委外替代料表（子项=BOM 原料，投产=实际发料/替代）
 YONGLIAN_TEMPLATE_HEADERS = [
     "序号",
     "子项物料编码",
@@ -56,7 +56,7 @@ _PO_RE = re.compile(
     re.I,
 )
 
-# 常见料号形态（菲利斯 / 恩玖 / 永联 / 亿兰科）——避免过宽通配产生误识别
+# 常见料号形态（客户A / 客户B / 客户C / 客户D）——避免过宽通配产生误识别
 _CODE_PATTERNS = [
     re.compile(r"\b\d{3}-\d{5,7}-\d{2}[A-Za-z]?\b"),  # 120-200235-09
     re.compile(r"\b\d{2}\.\d{2,4}\.\d{4,}\b"),  # 91.0302.100238 / 03.03.001100
@@ -130,7 +130,7 @@ def build_template_xlsx(*, profile: str = "standard") -> bytes:
     ws.title = "替代料"
     if (profile or "").strip().lower() in ("yonglian", "yl", "a067"):
         ws.insert_rows(1)
-        ws["A1"] = "委外订单号：01-202607-CG-0320       加工厂：深圳鼎雄           委外型号/数量：UXR100060CZ（ D1  U1 M1 U2 U3）板 20套"
+        ws["A1"] = "委外订单号：01-202607-CG-0320       加工厂：景立创           委外型号/数量：UXR100060CZ（ D1  U1 M1 U2 U3）板 20套"
         for col, h in enumerate(YONGLIAN_TEMPLATE_HEADERS, 1):
             ws.cell(row=2, column=col, value=h)
         sample = [
@@ -207,7 +207,7 @@ def _find_header_row(ws, max_scan: int = 20) -> tuple[int, list[str]]:
 
 def _parse_yonglian_sheet(ws) -> tuple[list[dict], str]:
     """
-    永联模式：
+    客户C模式：
       子项物料编码 = BOM 原料（元件品号）
       投产物料编码 = 实际投产/替代料号
       D1/U1/U2/U3/结构/M1 有用量则按板别拆行（qty=每板用量；parent 稍后绑机型）
@@ -497,7 +497,7 @@ def _parse_headered_sheet(ws) -> list[dict]:
 
 
 def parse_xlsx_bytes(content: bytes) -> dict:
-    """解析 xlsx；兼容永联委外表、标准模板与旧菲利斯宽表。"""
+    """解析 xlsx；兼容客户C委外表、标准模板与旧客户A宽表。"""
     try:
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     except Exception as exc:  # noqa: BLE001
@@ -518,7 +518,7 @@ def parse_xlsx_bytes(content: bytes) -> dict:
             fake = _FakeWs()
             yl_rows, po = _parse_yonglian_sheet(fake)
             if yl_rows:
-                msg = f"永联格式解析到 {len(yl_rows)} 行"
+                msg = f"客户C格式解析到 {len(yl_rows)} 行"
                 if po:
                     msg += f"（订单 {po}）"
                 return {"rows": yl_rows, "format": "yonglian", "message": msg, "purchase_no": po}
@@ -532,7 +532,7 @@ def parse_xlsx_bytes(content: bytes) -> dict:
     ws = wb.active
     yl_rows, po = _parse_yonglian_sheet(ws)
     if yl_rows:
-        msg = f"永联格式解析到 {len(yl_rows)} 行（已按板别拆分）"
+        msg = f"客户C格式解析到 {len(yl_rows)} 行（已按板别拆分）"
         if po:
             msg += f"（订单 {po}）"
         return {"rows": yl_rows, "format": "yonglian", "message": msg, "purchase_no": po}
@@ -551,7 +551,7 @@ def parse_xlsx_bytes_with_db(
     *,
     customer_id: str = "",
 ) -> dict:
-    """解析并（永联）绑定机型 parent。"""
+    """解析并（客户C）绑定机型 parent。"""
     parsed = parse_xlsx_bytes(content)
     if (parsed.get("format") or "") == "yonglian" or (customer_id or "").strip().lower() in (
         "yonglian",
@@ -681,7 +681,7 @@ def confirm_import(
     for raw in rows:
         item = _norm_row(raw)
         if item:
-            # 保留板别供永联绑定
+            # 保留板别供客户C绑定
             tag = (raw.get("board_tag") or "").strip()
             if tag:
                 item["board_tag"] = tag
@@ -699,7 +699,7 @@ def confirm_import(
             customer_id=cid,
         )
         if not normalized:
-            raise ValueError("永联规则绑定后无有效行")
+            raise ValueError("客户C规则绑定后无有效行")
 
     now = datetime.utcnow()
     batch_id = uuid.uuid4().hex[:16]
@@ -827,3 +827,29 @@ def delete_rule(db: Session, rule_id: int) -> str:
     db.flush()
     reload_substitution_cache_from_db(db, cid)
     return cid
+
+
+def confirm_manual_sub(
+    db: Session,
+    rule_id: int,
+    *,
+    sub_code: str = "",
+    sub_name: str = "",
+    sub_spec: str = "",
+) -> SubstitutionRule:
+    row = db.query(SubstitutionRule).filter(SubstitutionRule.id == rule_id).first()
+    if not row:
+        raise ValueError("规则不存在")
+    code = _cell_code(sub_code)
+    if not code:
+        raise ValueError("替代料号无效")
+    row.sub_code = code
+    if sub_name is not None:
+        row.sub_name = (sub_name or "").strip() or row.sub_name
+    if sub_spec is not None:
+        row.sub_spec = (sub_spec or "").strip() or row.sub_spec
+    row.source_type = row.source_type or "manual"
+    row.synced_at = datetime.utcnow()
+    db.flush()
+    reload_substitution_cache_from_db(db, row.customer_id)
+    return row

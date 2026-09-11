@@ -20,14 +20,26 @@ from routers import (
     hr,
     ict_gate,
     laser,
+    master,
     material_control,
     orders,
     packing,
+    planning,
+    presales,
     process_scan,
+    purchase,
+    production,
+    outsource,
     quotation,
+    sales,
     scheduling,
+    shipping,
     sync,
     warehouse,
+    aftersales,
+    warehouse_aux,
+    finance,
+    gl,
 )
 from security_hardening import (
     check_api_auth,
@@ -53,6 +65,9 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         ensure_default_users(db)
+        from master_data_service import ensure_master_defaults
+
+        ensure_master_defaults(db)
         from gerber_sync import reaudit_all_gerber_packages
         from placement_sync import reaudit_all_placement_files
         from refmap_sync import reaudit_all_refmap_files
@@ -212,6 +227,18 @@ app.include_router(laser.router)
 app.include_router(process_scan.router)
 app.include_router(ict_gate.router)
 app.include_router(hr.router)
+app.include_router(master.router)
+app.include_router(presales.router)
+app.include_router(sales.router)
+app.include_router(planning.router)
+app.include_router(purchase.router)
+app.include_router(production.router)
+app.include_router(outsource.router)
+app.include_router(shipping.router)
+app.include_router(aftersales.router)
+app.include_router(warehouse_aux.router)
+app.include_router(finance.router)
+app.include_router(gl.router)
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

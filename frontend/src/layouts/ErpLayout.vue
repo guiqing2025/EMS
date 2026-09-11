@@ -3,10 +3,10 @@
     <!-- 桌面侧栏 -->
     <el-aside v-show="!isMobile" width="220px" class="erp-aside">
       <div class="erp-brand">
-        <img :src="logoUrl" alt="鼎雄" />
+        <img :src="logoUrl" alt="景立创" />
         <div class="erp-brand-text">
-          <div class="name">鼎雄 EMS</div>
-          <div class="sub">生产管理系统</div>
+          <div class="name">景立创 ERP</div>
+          <div class="sub">销售订单至出货</div>
         </div>
       </div>
       <div class="erp-menu-wrap">
@@ -30,8 +30,9 @@
                 :index="child.path || child.key"
               >
                 <span>{{ child.title }}</span>
+                <span v-if="child.comingSoon" class="menu-soon">待建</span>
                 <el-badge
-                  v-if="child.key === 'eng-docs' && engPendingCount > 0"
+                  v-if="child.key === 'eng-control' && engPendingCount > 0"
                   :value="engPendingCount"
                   class="eng-menu-badge eng-menu-badge-hot"
                 />
@@ -64,10 +65,10 @@
     >
       <div class="erp-aside erp-aside--drawer">
         <div class="erp-brand">
-          <img :src="logoUrl" alt="鼎雄" />
+          <img :src="logoUrl" alt="景立创" />
           <div class="erp-brand-text">
-            <div class="name">鼎雄 EMS</div>
-            <div class="sub">生产管理系统</div>
+            <div class="name">景立创 ERP</div>
+            <div class="sub">销售订单至出货</div>
           </div>
         </div>
         <div class="erp-menu-wrap">
@@ -92,6 +93,7 @@
                   :index="child.path || child.key"
                 >
                   <span>{{ child.title }}</span>
+                  <span v-if="child.comingSoon" class="menu-soon">待建</span>
                   <el-badge
                     v-if="child.key === 'warehouse-finished' && shipPendingCount > 0"
                     :value="shipPendingCount"
@@ -336,20 +338,11 @@ function maybeAutoOpenEngTodo(n: number) {
   sessionStorage.setItem(ENG_TODO_AUTO_NAV_KEY, '1')
   ElNotification({
     title: engPendingTitle.value,
-    message: `您有 ${n} 条待处理事项，已为您打开工程待办`,
+    message: `您有 ${n} 条待处理事项，已为您打开物料管制`,
     type: 'warning',
     duration: 4500,
   })
-  let code = ''
-  try {
-    const customer = sessionStorage.getItem('eng_last_customer')
-    code = customer ? JSON.parse(customer).internal_code || '' : ''
-  } catch {
-    code = ''
-  }
-  const query: Record<string, string> = { tab: 'bom', todo: '1' }
-  if (code) query.customer = code
-  router.push({ path: '/engineering', query })
+  router.push({ path: '/engineering/material-control' })
 }
 
 async function refreshEngPending() {
@@ -524,8 +517,6 @@ onMounted(() => {
     void import('@/views/warehouse/WarehouseView.vue')
     void import('@/views/warehouse/FinishedGoodsView.vue')
     void import('@/views/warehouse/ShipmentRecordsView.vue')
-    void import('@/views/laser/LaserRegisterView.vue')
-    void import('@/views/DashboardView.vue')
   })
 })
 onUnmounted(() => {
@@ -590,6 +581,12 @@ onUnmounted(() => {
 }
 .erp-hub-return:hover {
   background: #ffedd5;
+}
+.menu-soon {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.55;
+  font-weight: 400;
 }
 .label-popup-lead {
   margin: 0 0 12px;

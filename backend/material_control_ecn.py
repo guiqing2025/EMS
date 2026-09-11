@@ -319,7 +319,7 @@ def parse_yonglian_ecn_file(
         # 宽松：有变更BOM编码也认
         title_ok = any("变更BOM" in "".join(_cell_str(c) for c in row) for row in rows[:6])
     if not title_ok:
-        raise ValueError("无法识别为永联 ECR/ECN 变更单，请确认上传正确表格")
+        raise ValueError("无法识别为 ECR/ECN 变更单，请确认上传正确表格")
 
     model_code = ""
     model_name = ""
@@ -386,7 +386,7 @@ def parse_yonglian_ecn_file(
             for m in matched:
                 m["selected"] = True
 
-    reason_bits = ["永联ECR"]
+    reason_bits = ["ECR"]
     if "临时变更" in head_text or "临时" in (filename or ""):
         reason_bits.append("临时变更")
     if "试产" in head_text:
@@ -407,7 +407,7 @@ def parse_yonglian_ecn_file(
         "model_name": model_name,
         "ecn_date": ecn_date,
         "suggested_control_no": suggested_no,
-        "control_type": "永联ECN",
+        "control_type": "ECN",
         "reason": " · ".join(reason_bits),
         "changes": changes,
         "matched_orders": matched,
@@ -505,7 +505,7 @@ def build_control_payload_from_ecn_preview(
     no = _unique_control_no(db, control_no or preview.get("suggested_control_no") or "")
     return {
         "control_no": no,
-        "control_type": preview.get("control_type") or "永联ECN",
+        "control_type": preview.get("control_type") or "ECN",
         "reason": preview.get("reason"),
         "ecn_no": no,
         "groups": [

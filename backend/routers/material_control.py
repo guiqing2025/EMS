@@ -146,11 +146,11 @@ async def api_parse_ecn(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
-    """解析永联 ECR/ECN 变更单，返回预览（含匹配在制订单，默认全选）。"""
+    """解析 ECR/ECN 变更单，返回预览（含匹配在制订单，默认全选）。"""
     _require_editor(principal)
     name = (file.filename or "").lower()
     if not name.endswith((".xls", ".xlsx", ".xlsm")):
-        raise HTTPException(status_code=400, detail="请上传永联 ECN 表格（.xls / .xlsx）")
+        raise HTTPException(status_code=400, detail="请上传 ECN 表格（.xls / .xlsx）")
     content = await file.read()
     try:
         return parse_yonglian_ecn_file(db, file.filename or "ecn.xls", content)
@@ -168,11 +168,11 @@ async def api_import_ecn(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
-    """解析永联 ECN 并创建管制草稿，同时保存原表为附件。"""
+    """解析 ECN 并创建管制草稿，同时保存原表为附件。"""
     _require_editor(principal)
     name = (file.filename or "").lower()
     if not name.endswith((".xls", ".xlsx", ".xlsm")):
-        raise HTTPException(status_code=400, detail="请上传永联 ECN 表格（.xls / .xlsx）")
+        raise HTTPException(status_code=400, detail="请上传 ECN 表格（.xls / .xlsx）")
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="空文件")

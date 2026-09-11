@@ -1,0 +1,45 @@
+# 阶段 4 交付说明 — 采购执行链
+
+## 里程碑 M4
+
+采购从下单到 **良品入库** 或 **不合格退货** 全链路可演示；**不良不可入 GOOD**。
+
+## 已上线
+
+| 事项 | 能力 |
+|------|------|
+| 4.1 采购单 | 手工建单；从采购计划下推；状态草稿→确认→部分/关闭 |
+| 4.2 到货条码 | 绑定采购行登记条码与数量，回写 `arrived_qty` |
+| 4.3 送检 + IQC | 从采购单生成送检；判定合格/不合格/部分 |
+| 4.4 入库 / 退货 | 合格 → 入库单过账写 `WarehouseMaterial` + `record_inbound(source=purchase)`；不合格 → 退货确认（不改良品库存） |
+| 4.5 应付挂钩 | 入库过账写 `ApPayableStub`（阶段9正式启用） |
+
+## 硬规则
+
+- 入库单 `warehouse_code` 必须为 `GOOD`
+- 送检结果全不合格时 **禁止** 生成入库单
+- 退货单不得写入 GOOD
+
+## API
+
+前缀：`/api/purchase`
+
+- `/orders` CRUD + status + `/from-plan/{plan_id}`
+- `/arrivals`、`/orders/{id}/arrivals`
+- `/inspects/from-po/{po_id}`、`/inspects/{id}/judge`
+- `/receipts/from-inspect/{id}`、`/receipts/{id}/post`
+- `/returns/from-inspect/{id}`、`/returns/{id}/confirm`
+- `/ap-stubs`
+
+## 前端
+
+- `/purchase/orders`、`/inspect`、`/receipt`、`/return`
+
+## 自测
+
+```bash
+cd backend
+EMS_DB=ems.dev.db EMS_USE_SQLITE=1 .venv/bin/python scripts/sim_phase04_purchase.py
+```
+
+最近一次（2026-09-09）：**通过 9 / 失败 0**（合格入库、不合格禁入库+退货、HTTP 部分合格分流）。

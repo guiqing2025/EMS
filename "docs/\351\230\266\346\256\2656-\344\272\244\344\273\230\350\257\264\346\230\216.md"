@@ -1,0 +1,50 @@
+# 阶段 6 交付说明 — 委外执行链
+
+## 里程碑 M6
+
+委外单：确认 → 发料（扣内部库存）→ 条码 → 送检 → 合格委托入库 / 不合格退货；与采购对称。不合格禁止入 GOOD。
+
+## 已上线
+
+| 事项 | 能力 |
+|------|------|
+| 6.1 委外单 | 手工建单；从委外计划（confirmed/released）下推；工序/供应商 |
+| 6.2 发料 | 生成发料单并确认，按可用量扣 `stock_owner` 库存 |
+| 6.3 条码 | 挂委外条码到委外单 |
+| 6.3 送检 | 从委外单建送检；判定合格/不合格/部分 |
+| 6.3 委托入库 | 仅合格数量过账入 GOOD（`source=outsource`） |
+| 6.3 退货 | 不合格确认退货，不入 GOOD |
+| 6.4 应付 stub | 委托入库过账写 `ApPayableStub(source_type=outsource_receipt)` |
+
+## 硬规则
+
+- 送检无合格数量 → 禁止生成/过账委托入库
+- 发料可用量不足 → 拒绝确认
+- 委托入库仓强制 `GOOD`；退货仓不得为 GOOD
+
+## API
+
+前缀：`/api/outsource`
+
+- `/orders`、`/orders/from-plan/{id}`、`/orders/{id}/status`
+- `/ships/from-order/{id}`、`/ships/{id}/confirm`、`/barcodes`
+- `/inspects/from-order/{id}`、`/inspects/{id}/judge`
+- `/receipts/from-inspect/{id}`、`/receipts/{id}/post`
+- `/returns/from-inspect/{id}`、`/returns/{id}/confirm`
+
+## 前端
+
+`/outsource/orders`、`/inspect`、`/receipt`、`/return`
+
+## 自测
+
+```bash
+cd backend
+EMS_DB=ems.dev.db EMS_USE_SQLITE=1 .venv/bin/python scripts/sim_phase06_outsource.py
+```
+
+最近一次（2026-09-09）：**通过 11 / 失败 0**。
+
+## 刻意后置
+
+委外在途仓/发料收回完整对账、工序级多段委外、财务正式应付（阶段9）。

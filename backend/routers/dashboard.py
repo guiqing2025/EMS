@@ -155,5 +155,5 @@ def get_recent_orders(
 
 @router.get("/receive-board", response_model=ReceiveBoardOut)
 def get_receive_board(db: Session = Depends(get_db)):
-    """菲利斯 / 恩玖上月 vs 本月收货看板（基于每日收货累计快照差分）。"""
+    """客户收货上月 vs 本月收货看板（基于每日收货累计快照差分）。"""
     return build_receive_board(db)

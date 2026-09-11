@@ -219,7 +219,7 @@ def sync_laser_from_tts(
         payload = history_to_batch_payload(
             h,
             customer_id=cfg.get("customer_id") or "feilisi",
-            customer_name=cfg.get("customer_name") or "菲利斯",
+            customer_name=cfg.get("customer_name") or "客户A",
         )
         if not payload:
             skipped += 1

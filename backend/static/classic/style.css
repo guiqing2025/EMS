@@ -123,7 +123,10 @@ body {
   position: absolute;
   inset: 0;
   z-index: 0;
-  background: url("/static/assets/dx-factory-exterior.jpg") center center / cover no-repeat;
+  background:
+    radial-gradient(ellipse 80% 60% at 15% 0%, rgba(14, 116, 144, 0.12), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 100% 100%, rgba(30, 64, 175, 0.1), transparent 50%),
+    linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
   pointer-events: none;
 }
 
@@ -968,7 +971,10 @@ input:focus, select:focus { outline: 2px solid var(--primary); }
 .login-bg {
   position: absolute;
   inset: 0;
-  background: url("/static/assets/dx-factory-exterior.jpg") center center / cover no-repeat;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(14, 116, 144, 0.35), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(30, 64, 175, 0.4), transparent 50%),
+    linear-gradient(145deg, #0f172a 0%, #1e3a5f 48%, #0e7490 100%);
   transform: scale(1.02);
 }
 
@@ -1515,7 +1521,7 @@ input:focus, select:focus { outline: 2px solid var(--primary); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 菲利斯 TDA：8 列紧凑一览，常规屏宽无需横滚 */
+/* 客户A TDA：8 列紧凑一览，常规屏宽无需横滚 */
 body.eng-sub-tda .eng-sub-table {
   table-layout: fixed;
   width: 100%;
@@ -1616,7 +1622,7 @@ body.eng-sub-tda .tda-col-ops .btn { margin: 0 2px 2px 0; padding: 2px 6px; font
 .eng-sub-table tr.eng-sub-editing td {
   background: #fff7ed;
 }
-/* 永联列多，允许横向滚动 */
+/* 客户C列多，允许横向滚动 */
 body.eng-sub-yonglian .eng-sub-table {
   table-layout: auto;
   min-width: 1100px;
@@ -1627,7 +1633,7 @@ body.eng-sub-yonglian .eng-sub-table td {
   max-width: 220px;
 }
 .eng-sub-meta { color: var(--muted); font-size: 13px; margin-left: 8px; }
-/* 永联替代料无「主件」概念，隐藏主件品号/品名 */
+/* 客户C替代料无「主件」概念，隐藏主件品号/品名 */
 .eng-yl-sub-layout {
   display: grid;
   grid-template-columns: minmax(240px, 300px) 1fr;
@@ -1820,7 +1826,7 @@ tr.row-new-order:hover { background: rgba(254, 215, 170, 0.45); }
 .cell-muted { color: var(--muted); font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 .cell-wrap { white-space: normal; word-break: break-word; line-height: 1.45; max-width: 360px; vertical-align: top; }
 
-/* 永联替代料分板用量列 */
+/* 客户C替代料分板用量列 */
 body.eng-sub-yonglian .eng-yl-board-qty {
   text-align: center;
   font-variant-numeric: tabular-nums;

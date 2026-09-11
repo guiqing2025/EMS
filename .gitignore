@@ -45,6 +45,9 @@ scripts/_share_paths.json
 backend/tmp_aoi_smb/
 backend/static/uploads/
 backend/data/failed_bom_uploads/
+_tmp_flow/
+*.bak
+*.bak-*
 wang_captcha.png
 yonglian_*.png
 yonglian_*.json

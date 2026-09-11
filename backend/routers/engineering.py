@@ -888,7 +888,7 @@ def substitution_meta(customer_id: str = "", db: Session = Depends(get_db)):
         latest_q = latest_q.filter(SubstitutionRule.customer_id == cid)
     latest = latest_q.order_by(SubstitutionRule.id.desc()).first()
     cust = get_customer(cid) if cid else None
-    # 旧文件路径仅作兼容展示（菲利斯迁入用），不再作为日常同步源
+    # 旧文件路径仅作兼容展示（历史迁入用），不再作为日常同步源
     path = Path(get_substitution_file_path()) if (not cid or cid == "feilisi") else None
     return SubstitutionMetaOut(
         customer_id=cid,
@@ -908,7 +908,7 @@ def substitution_template(customer_id: str = ""):
     fname = (
         "yonglian_substitution_template.xlsx"
         if profile == "yonglian"
-        else "鼎雄TDA变更记录模板.xlsx"
+        else "TDA变更记录模板.xlsx"
     )
     return Response(
         content=content,
@@ -957,7 +957,7 @@ async def yonglian_sub_sheet_parse_image(
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
     _require_planner(principal)
-    raise HTTPException(status_code=400, detail="已关闭图片导入，请使用永联替代料 XLSX 表格导入")
+    raise HTTPException(status_code=400, detail="已关闭图片导入，请使用替代料 XLSX 表格导入")
 
 
 @router.post("/yonglian-sub-sheets/confirm")
@@ -989,7 +989,7 @@ def yonglian_sub_sheet_import_exact_0320(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
-    """将指定传图（01-202607-CG-0320）一字不差写入永联替代模块。"""
+    """将指定传图（01-202607-CG-0320）一字不差写入替代模块。"""
     _require_planner(principal)
     from yonglian_sub_sheet import seed_sheet_from_image_0320
 
@@ -1057,7 +1057,7 @@ def substitution_migrate_legacy(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
-    """一次性：从旧全局文件迁入菲利斯规则（覆盖 feilisi）。"""
+    """一次性：从旧全局文件迁入历史规则（覆盖 feilisi）。"""
     _require_planner(principal)
     result = sync_substitution_rules(db, customer_id="feilisi", replace=True)
     reload_substitution_cache_from_db(db, "feilisi")
@@ -1067,7 +1067,7 @@ def substitution_migrate_legacy(
 
 @router.post("/substitutions/sync-now", response_model=SubstitutionSyncResult)
 def substitution_sync_now(db: Session = Depends(get_db), principal: AuthPrincipal = Depends(require_system_auth)):
-    """兼容旧入口：等价于迁入菲利斯旧表。"""
+    """兼容旧入口：等价于迁入历史旧表。"""
     return substitution_migrate_legacy(db=db, principal=principal)
 
 
@@ -1226,7 +1226,7 @@ async def models_import(
     if ic == "A120":
         raise HTTPException(
             status_code=400,
-            detail="亿兰科请点「导入 BOM」：纯插件/纯贴片选 1 份；SMT+DIP 一次选 2 份 Excel",
+            detail="请点「导入 BOM」：纯插件/纯贴片选 1 份；SMT+DIP 一次选 2 份 Excel",
         )
     result = import_bom_bytes(
         db,
@@ -1293,7 +1293,7 @@ async def models_import_yilanke(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_system_auth),
 ):
-    """亿兰科：1 份（纯 DIP/纯 SMT）或 2 份（SMT+DIP 合并）导入。"""
+    """双表 BOM：1 份（纯 DIP/纯 SMT）或 2 份（SMT+DIP 合并）导入。"""
     _require_eng_import(principal)
     pn = (purchase_no or "").strip()
     if not pn:
@@ -1337,9 +1337,9 @@ async def models_import_yilanke(
         except OSError as exc:
             logger.warning("导入后资料回链跳过: %s", exc)
         note = (
-            "已导入亿兰科单份 BOM，请审核贴装与资料"
+            "已导入单份 BOM，请审核贴装与资料"
             if result.get("single_file")
-            else "已导入亿兰科 SMT+DIP 合并 BOM，请审核贴装与资料"
+            else "已导入 SMT+DIP 合并 BOM，请审核贴装与资料"
         )
         _push_review_after_import(
             db,

@@ -92,10 +92,27 @@ def upsert_user(
     return row
 
 
+# 流程图泳道角色说明（账号权限 / 文档用）
+SWIMLANE_ROLES = [
+    ("sales", "业务"),
+    ("purchasing", "采购"),
+    ("production", "生产"),
+    ("quality", "品质"),
+    ("pmc", "PMC"),
+    ("finance", "财务"),
+    ("warehouse", "仓管"),
+]
+
+
 def ensure_default_users(db: Session) -> None:
     defaults = [
         ("warehouse", "仓库管理员", "warehouse", None, "888888"),
         ("planner", "计划员", "planner", None, "888888"),
+        ("sales", "业务员", "sales", None, "888888"),
+        ("purchasing", "采购员", "purchasing", None, "888888"),
+        ("production", "生产主管", "production", None, "888888"),
+        ("quality", "品质员", "quality", None, "888888"),
+        ("finance", "财务", "finance", None, "888888"),
         ("smt", "SMT", "dept", "smt", "888888"),
         ("dip", "DIP", "dept", "dip", "888888"),
     ]

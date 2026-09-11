@@ -144,6 +144,31 @@ export interface OrderIctBoardSummary {
   }>
 }
 
+export interface OrderPreOvenAoiSummary {
+  purchase_no: string
+  total: number
+  pass_count: number
+  fail_count: number
+  unknown_count: number
+  false_positive_count?: number
+  items_limit?: number
+  items_truncated?: boolean
+  result_filter?: string
+  model_code?: string
+  items: Array<{
+    barcode: string
+    model_code?: string | null
+    result: string
+    side?: string | null
+    laser_date?: string | null
+    seq?: number | null
+    tested_at?: string | null
+    machine?: string | null
+    fail_summary?: string | null
+    fail_kind?: string | null
+  }>
+}
+
 export async function fetchOrderBoards(
   purchaseNo: string,
   customerId = '',
@@ -175,5 +200,28 @@ export async function fetchOrderIctBoards(
   if (opts.limit) q.set('limit', String(opts.limit))
   return apiFetch<OrderIctBoardSummary>(
     `/laser/orders/${encodeURIComponent(purchaseNo)}/ict-boards?${q}`,
+  )
+}
+
+export async function fetchOrderPreOvenAoiBoards(
+  purchaseNo: string,
+  customerId = '',
+  keyword = '',
+  opts: {
+    result?: string
+    includeItems?: boolean
+    limit?: number
+    modelCode?: string
+  } = {},
+) {
+  const q = new URLSearchParams()
+  if (customerId) q.set('customer_id', customerId)
+  if (opts.modelCode) q.set('model_code', opts.modelCode)
+  if (keyword) q.set('keyword', keyword)
+  if (opts.result) q.set('result', opts.result)
+  q.set('include_items', opts.includeItems === false ? 'false' : 'true')
+  if (opts.limit) q.set('limit', String(opts.limit))
+  return apiFetch<OrderPreOvenAoiSummary>(
+    `/laser/orders/${encodeURIComponent(purchaseNo)}/pre-oven-aoi-boards?${q}`,
   )
 }

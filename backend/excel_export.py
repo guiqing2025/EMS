@@ -172,7 +172,7 @@ def build_bom_xlsx(bom: dict, lines: list[dict], profile_info: Optional[dict] = 
 
 
 def export_filename() -> str:
-    return f"菲利斯订单_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return f"订单导出_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
 
 def export_content_disposition() -> str:

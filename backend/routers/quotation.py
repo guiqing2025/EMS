@@ -26,13 +26,14 @@ from system_auth import AuthPrincipal, require_system_auth
 router = APIRouter(prefix="/api/quotation", tags=["quotation"])
 
 QUOTE_ALLOWED_USERS = {"wgq", "dx001"}
+QUOTE_ALLOWED_ROLES = frozenset({"admin", "sales", "pmc"})
 
 
 def require_quote_access(principal: AuthPrincipal = Depends(require_system_auth)) -> AuthPrincipal:
     name = (principal.username or "").strip().lower()
-    if name not in QUOTE_ALLOWED_USERS:
-        raise HTTPException(status_code=403, detail="无订单报价模块权限（仅系统管理员 WGQ / dx001）")
-    return principal
+    if name in QUOTE_ALLOWED_USERS or principal.role in QUOTE_ALLOWED_ROLES:
+        return principal
+    raise HTTPException(status_code=403, detail="无订单报价模块权限")
 
 
 class QuoteCreateIn(BaseModel):

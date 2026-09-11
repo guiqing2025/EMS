@@ -778,3 +778,56 @@ def reaudit_all_placement_files(db: Session) -> int:
         row.audit_message = audit.message
         updated += 1
     return updated
+
+
+def placement_export_content_disposition(filename: str) -> str:
+    from urllib.parse import quote
+
+    safe = Path(filename or "placement.csv").name or "placement.csv"
+    ascii_name = "placement.csv"
+    return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(safe)}'
+
+
+def build_placement_export(db: Session, file_id: int) -> tuple[bytes, str, str]:
+    """从库内坐标明细导出 CSV（只读下载）。"""
+    import csv
+    import io
+
+    row = db.query(PcbPlacementFile).filter(PcbPlacementFile.id == file_id).first()
+    if not row:
+        raise ValueError("坐标文件不存在")
+
+    lines = (
+        db.query(PcbPlacementLine)
+        .filter(PcbPlacementLine.placement_file_id == file_id)
+        .order_by(PcbPlacementLine.sort_order.asc(), PcbPlacementLine.id.asc())
+        .all()
+    )
+    if not lines:
+        raise ValueError("没有可导出的坐标明细")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        ["refdes", "comment", "footprint", "layer", "mid_x", "mid_y", "rotation", "skip", "material_hint"]
+    )
+    for line in lines:
+        writer.writerow(
+            [
+                line.refdes or "",
+                line.comment or "",
+                line.footprint or "",
+                line.layer or "",
+                "" if line.mid_x is None else line.mid_x,
+                "" if line.mid_y is None else line.mid_y,
+                "" if line.rotation is None else line.rotation,
+                1 if line.skip else 0,
+                line.material_hint or "",
+            ]
+        )
+
+    content = buf.getvalue().encode("utf-8-sig")
+    base = (row.board_name or row.model_code or f"placement_{file_id}").strip()
+    safe = re.sub(r'[\\/:*?"<>|]+', "_", base) or f"placement_{file_id}"
+    filename = f"{safe}.csv"
+    return content, filename, "text/csv; charset=utf-8"

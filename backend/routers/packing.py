@@ -793,7 +793,7 @@ def get_shipment(shipment_id: int, db: Session = Depends(get_db)):
 
 @router.get("/shipment/{shipment_id}/slip")
 def get_shipment_delivery_slip(shipment_id: int, db: Session = Depends(get_db)):
-    """菲利斯风格送货单打印数据（只读）。合并单会返回多行。"""
+    """送货单打印数据（只读）。合并单会返回多行。"""
     try:
         return build_delivery_slip(db, shipment_id)
     except ValueError as exc:

@@ -32,7 +32,7 @@ BACKFILL_BARCODE_PREFIX = "__EMS_BF__"
 BACKFILL_OPERATOR_PREFIX = "backfill:"
 BACKFILL_REMARK_TAG = "【历史发货补录】"
 
-COMPANY_NAME = "深圳鼎雄电子科技有限公司"
+COMPANY_NAME = "深圳市景立科技有限公司"
 
 
 def expand_box_qtys(total: int, boxes: int, per: int) -> list[int]:
@@ -2067,7 +2067,7 @@ def get_line_reconcile(db: Session, line_key: str) -> dict:
 
 
 def build_delivery_slip(db: Session, shipment_id: int) -> dict:
-    """菲利斯风格送货单打印数据。
+    """送货单打印数据。
 
     若该出库单挂在合并送货单上，返回整张合并单；否则单行。
     交货数量=本次发货；未交数量=发后内部未发完。
@@ -2095,7 +2095,7 @@ def build_delivery_slip(db: Session, shipment_id: int) -> dict:
         "customer_name": shipment.customer_name
         or (order.customer_name if order else "")
         or "",
-        "warehouse": "鼎雄成品仓",
+        "warehouse": "成品仓",
         "logistics": shipment.logistics or "",
         "address": "",
         "operator": shipment.operator or "",
@@ -2174,7 +2174,7 @@ def build_delivery_slip_for_slip(db: Session, slip_id: int) -> dict:
         "shipment_no": slip.slip_no,
         "ship_date": slip.ship_date,
         "customer_name": slip.customer_name or "",
-        "warehouse": "鼎雄成品仓",
+        "warehouse": "成品仓",
         "logistics": slip.logistics or "",
         "address": "",
         "operator": slip.operator or "",

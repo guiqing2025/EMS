@@ -128,7 +128,7 @@ def _bom_header_hint(rows: list, max_scan: int = 8) -> str:
         return "文件前几行均为空，请确认是否为 Excel BOM"
     return (
         "；".join(parts)
-        + "。恩玖需含：主件品号+元件品号（ERP导出），或 元件品号+用量（发料/备料表，机型在标题行）"
+        + "。该格式需含：主件品号+元件品号（ERP导出），或 元件品号+用量（发料/备料表，机型在标题行）"
     )
 
 
@@ -297,7 +297,7 @@ def _parse_yonglian_rows(rows: list, header_idx: int) -> ParsedBom:
     idx_process = _pick_col(headers, "子物料装配类型", "MES_工序")
     idx_remark = _pick_col(headers, "BOM备注", "备注")
     if idx_code is None:
-        raise ValueError("非永联 BOM 格式（缺少子物料编码）")
+        raise ValueError("非该客户 BOM 格式（缺少子物料编码）")
 
     model_code, model_name, model_spec = _extract_yonglian_parent(rows, header_idx)
     lines: list[ParsedBomLine] = []
@@ -624,6 +624,11 @@ def _codes_compatible(internal_code: str, left: str, right: str) -> bool:
     left_ids = set(_upsert_identity_codes(internal_code, left))
     right_ids = set(_upsert_identity_codes(internal_code, right))
     return bool(left_ids & right_ids)
+
+
+def _strict_order_model_match(internal_code: str, order_code: str, model_code: str) -> bool:
+    """开发补齐：严格匹配订单料号与 BOM 机型。"""
+    return _codes_compatible(internal_code, order_code, model_code)
 
 
 def _alias_evidence(order_code: str, erp_code: str, folder_name: str, source_file: str) -> bool:

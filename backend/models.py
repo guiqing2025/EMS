@@ -42,7 +42,7 @@ class SrmOrder(Base):
     srm_status_name: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     data_source: Mapped[str] = mapped_column(String(64), default="订单跟踪")
-    customer_name: Mapped[Optional[str]] = mapped_column(String(128), default="菲利斯")
+    customer_name: Mapped[Optional[str]] = mapped_column(String(128), default="客户A")
     customer_id: Mapped[str] = mapped_column(String(64), default="feilisi", index=True)
     remark: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     bom_model_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
@@ -596,6 +596,21 @@ class EngOrderHide(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class EngIssuePrintLog(Base):
+    """工程发料单打印记录（开发补齐模型，完整逻辑见 eng_issue_print_service）。"""
+
+    __tablename__ = "eng_issue_print_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bom_model_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    purchase_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    model_code: Mapped[str] = mapped_column(String(128), default="")
+    line_key: Mapped[str] = mapped_column(String(128), default="")
+    printed_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    remark: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class BomLine(Base):
     """BOM 明细行"""
 
@@ -730,7 +745,7 @@ class SubstitutionRule(Base):
 
 
 class YonglianSubSheet(Base):
-    """永联订单物料替代/发料明细单（对齐客户传图版式）"""
+    """客户C订单物料替代/发料明细单（对齐客户传图版式）"""
 
     __tablename__ = "yonglian_sub_sheets"
 
@@ -757,7 +772,7 @@ class YonglianSubSheet(Base):
 
 
 class YonglianSubSheetLine(Base):
-    """永联替代明细行（序号/贴装/面别/元件品号/…/需求/发料/退料）"""
+    """客户C替代明细行（序号/贴装/面别/元件品号/…/需求/发料/退料）"""
 
     __tablename__ = "yonglian_sub_sheet_lines"
 
@@ -824,7 +839,7 @@ class ModelToolingEntry(Base):
 
 
 class PcbPlacementFile(Base):
-    """PCB 贴片坐标文件（机型级或订单级；菲利斯按 purchase_no 隔离）"""
+    """PCB 贴片坐标文件（机型级或订单级；客户A按 purchase_no 隔离）"""
 
     __tablename__ = "pcb_placement_files"
 
@@ -918,7 +933,7 @@ class PcbGerberPackage(Base):
 
 
 class QuoteOrder(Base):
-    """独立订单报价单（不关联系统订单中心）"""
+    """成本报价 / 对外报价（阶段1可挂询价单）"""
 
     __tablename__ = "quote_orders"
 
@@ -935,6 +950,13 @@ class QuoteOrder(Base):
     engineering_fee: Mapped[float] = mapped_column(Float, default=0)
     grand_total: Mapped[float] = mapped_column(Float, default=0)
     source_filename: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    # 阶段1：挂询价 / 供应商成本备注 / 对外卖价
+    inquiry_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    quote_kind: Mapped[str] = mapped_column(String(16), default="cost")  # cost / customer
+    supplier_name: Mapped[str] = mapped_column(String(128), default="")
+    supplier_cost: Mapped[float] = mapped_column(Float, default=0)
+    sell_price: Mapped[float] = mapped_column(Float, default=0)
     created_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     updated_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -965,7 +987,7 @@ class QuoteBomLine(Base):
 
 
 class QuoteCostLine(Base):
-    """报价费用明细（对应鼎雄报价模版工艺行）"""
+    """报价费用明细（对应加工报价模版工艺行）"""
 
     __tablename__ = "quote_cost_lines"
 
@@ -1038,8 +1060,8 @@ class ProductionMasterPlan(Base):
 class LaserBatch(Base):
     """镭雕/贴码登记：流水段 → 采购订单号。
 
-    菲利斯：D0 镭雕（laser_date + model_mid/ver + seq）
-    恩玖：人工贴码（barcode_prefix 12 位 + seq）
+    客户A：D0 镭雕（laser_date + model_mid/ver + seq）
+    客户B：人工贴码（barcode_prefix 12 位 + seq）
     """
 
     __tablename__ = "laser_batches"
@@ -1047,7 +1069,7 @@ class LaserBatch(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     customer_id: Mapped[str] = mapped_column(String(64), default="feilisi", index=True)
     customer_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    laser_date: Mapped[str] = mapped_column(String(8), index=True)  # YYMMDD；恩玖用打印日期
+    laser_date: Mapped[str] = mapped_column(String(8), index=True)  # YYMMDD；客户B用打印日期
     model_code: Mapped[str] = mapped_column(String(64), index=True)
     model_mid: Mapped[str] = mapped_column(String(16), index=True)
     model_ver: Mapped[str] = mapped_column(String(8), index=True)
@@ -1055,7 +1077,7 @@ class LaserBatch(Base):
     order_qty: Mapped[float] = mapped_column(Float, default=0)
     seq_from: Mapped[int] = mapped_column(Integer)
     seq_to: Mapped[int] = mapped_column(Integer)
-    # 恩玖贴码前 12 位（固定+物料+供应商+年周）；菲利斯为空
+    # 贴码（前缀+流水）前 12 位（固定+物料+供应商+年周）；客户A为空
     barcode_prefix: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
     remark: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     source: Mapped[str] = mapped_column(String(24), default="manual")
@@ -1506,3 +1528,1481 @@ class SmtStationRow(Base):
     remark: Mapped[str] = mapped_column(String(256), default="")
     sort_no: Mapped[int] = mapped_column(Integer, default=0)
     synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+# —— 景立 ERP 阶段 0：主数据 / 仓库维度 / 单据编号 ——
+
+
+class ErpCustomer(Base):
+    """主数据·客户资料（销售域，非 SRM 配置）"""
+
+    __tablename__ = "erp_customers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), default="", index=True)
+    short_name: Mapped[str] = mapped_column(String(64), default="")
+    contact: Mapped[str] = mapped_column(String(64), default="")
+    phone: Mapped[str] = mapped_column(String(64), default="")
+    address: Mapped[str] = mapped_column(String(512), default="")
+    tax_no: Mapped[str] = mapped_column(String(64), default="")
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    # 三证图片：相对 /static 的路径，如 uploads/customers/1/business.jpg
+    cert_business: Mapped[str] = mapped_column(String(512), default="")
+    cert_org: Mapped[str] = mapped_column(String(512), default="")
+    cert_tax: Mapped[str] = mapped_column(String(512), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ErpSupplier(Base):
+    """主数据·供应商"""
+
+    __tablename__ = "erp_suppliers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), default="", index=True)
+    short_name: Mapped[str] = mapped_column(String(64), default="")
+    contact: Mapped[str] = mapped_column(String(64), default="")
+    phone: Mapped[str] = mapped_column(String(64), default="")
+    address: Mapped[str] = mapped_column(String(512), default="")
+    tax_no: Mapped[str] = mapped_column(String(64), default="")
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ErpWarehouse(Base):
+    """仓库维度：良品仓 / 待检仓 / 退货仓等"""
+
+    __tablename__ = "erp_warehouses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(64), default="")
+    # good | inspect | return | wip | other
+    wh_type: Mapped[str] = mapped_column(String(16), default="good", index=True)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    sort_no: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ErpStockProduct(Base):
+    """库存产品 / 可售成品档案（备货与价格引用）"""
+
+    __tablename__ = "erp_stock_products"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    material_code: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    spec: Mapped[str] = mapped_column(String(512), default="")
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    category: Mapped[str] = mapped_column(String(64), default="")
+    can_stock: Mapped[bool] = mapped_column(Boolean, default=True)
+    safety_qty: Mapped[float] = mapped_column(Float, default=0)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ErpPriceItem(Base):
+    """价格管理：标准价 / 客户协议价"""
+
+    __tablename__ = "erp_price_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # standard | customer
+    price_type: Mapped[str] = mapped_column(String(16), default="standard", index=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    currency: Mapped[str] = mapped_column(String(8), default="CNY")
+    effective_from: Mapped[str] = mapped_column(String(16), default="")
+    effective_to: Mapped[str] = mapped_column(String(16), default="")
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DocNumberSeq(Base):
+    """单据编号序列：前缀 + 日期 + 流水"""
+
+    __tablename__ = "doc_number_seqs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    doc_type: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    prefix: Mapped[str] = mapped_column(String(16), default="")
+    name: Mapped[str] = mapped_column(String(64), default="")
+    date_fmt: Mapped[str] = mapped_column(String(16), default="%Y%m%d")
+    seq_width: Mapped[int] = mapped_column(Integer, default=4)
+    last_date: Mapped[str] = mapped_column(String(16), default="")
+    last_seq: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# —— 景立 ERP 阶段 1：售前闭环 ——
+
+
+class PresalesInquiry(Base):
+    """询价单"""
+
+    __tablename__ = "presales_inquiries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    inquiry_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    contact: Mapped[str] = mapped_column(String(64), default="")
+    phone: Mapped[str] = mapped_column(String(64), default="")
+    title: Mapped[str] = mapped_column(String(256), default="")
+    # draft / submitted / quoting / quoted / closed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    updated_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PresalesInquiryLine(Base):
+    """询价单行"""
+
+    __tablename__ = "presales_inquiry_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    inquiry_id: Mapped[int] = mapped_column(Integer, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    material_code: Mapped[str] = mapped_column(String(128), default="")
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    spec: Mapped[str] = mapped_column(String(512), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class SampleDesign(Base):
+    """设计 / 打样任务（报价确认后）"""
+
+    __tablename__ = "sample_designs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    design_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    inquiry_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    quote_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    product_code: Mapped[str] = mapped_column(String(128), default="")
+    product_name: Mapped[str] = mapped_column(String(256), default="")
+    # draft / designing / sampling / confirmed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    owner: Mapped[str] = mapped_column(String(64), default="")
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SampleOrder(Base):
+    """打样订单"""
+
+    __tablename__ = "sample_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sample_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    inquiry_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    quote_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    design_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    product_code: Mapped[str] = mapped_column(String(128), default="")
+    product_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    # 打样属性：new_product / revise / competitive 等自由文本
+    sample_attr: Mapped[str] = mapped_column(String(64), default="new_product")
+    bom_model_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    # draft / confirmed / in_progress / done / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ErpSalesOrder(Base):
+    """销售订单头（报价转入 / 手工 / 打样转量产 / 旧 PO 导入）"""
+
+    __tablename__ = "erp_sales_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    so_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # sales / sample_convert / srm_import
+    order_kind: Mapped[str] = mapped_column(String(16), default="sales", index=True)
+    inquiry_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    quote_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    sample_order_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    external_po_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    source_srm_line_key: Mapped[str] = mapped_column(String(128), default="", index=True)
+    # 下推计划前是否强制行绑定工程 BOM（可配置）
+    require_bom: Mapped[bool] = mapped_column(Boolean, default=False)
+    # draft / confirmed / planning / executing / partial_shipped / done / closed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ErpSalesOrderLine(Base):
+    """销售订单行"""
+
+    __tablename__ = "erp_sales_order_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    so_id: Mapped[int] = mapped_column(Integer, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    material_code: Mapped[str] = mapped_column(String(128), default="")
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    spec: Mapped[str] = mapped_column(String(512), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    amount: Mapped[float] = mapped_column(Float, default=0)
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    shipped_qty: Mapped[float] = mapped_column(Float, default=0)
+    bom_model_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class ErpStockOrder(Base):
+    """备货单（无客户或内部备货；确认后可进 MRP）"""
+
+    __tablename__ = "erp_stock_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stock_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # internal / customer（有客户时可选）
+    stock_kind: Mapped[str] = mapped_column(String(16), default="internal", index=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    warehouse_code: Mapped[str] = mapped_column(String(32), default="GOOD")
+    # draft / confirmed / planning / done / closed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ErpStockOrderLine(Base):
+    """备货单行"""
+
+    __tablename__ = "erp_stock_order_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stock_id: Mapped[int] = mapped_column(Integer, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    bom_model_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class SampleMail(Base):
+    """样品邮寄 / 样品链接登记"""
+
+    __tablename__ = "sample_mails"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mail_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    inquiry_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    product_name: Mapped[str] = mapped_column(String(256), default="")
+    # mail / link
+    channel: Mapped[str] = mapped_column(String(16), default="mail")
+    tracking_no: Mapped[str] = mapped_column(String(128), default="")
+    link_url: Mapped[str] = mapped_column(String(512), default="")
+    # draft / sent / received / closed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    sent_at: Mapped[str] = mapped_column(String(32), default="")
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SampleLoan(Base):
+    """借样单（阶段8可还入/转销售）"""
+
+    __tablename__ = "sample_loans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    loan_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    product_code: Mapped[str] = mapped_column(String(128), default="")
+    product_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=1)
+    # draft / lent / returned / converted / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    lent_at: Mapped[str] = mapped_column(String(32), default="")
+    expect_return_at: Mapped[str] = mapped_column(String(32), default="")
+    returned_at: Mapped[str] = mapped_column(String(32), default="")
+    converted_so_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# —— 阶段3：计划中枢 ——
+
+
+class CustomerForecast(Base):
+    """客户预告头（需求输入）"""
+
+    __tablename__ = "customer_forecasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    forecast_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    # draft / confirmed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CustomerForecastLine(Base):
+    __tablename__ = "customer_forecast_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    forecast_id: Mapped[int] = mapped_column(Integer, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    bom_model_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class PurchaseForecast(Base):
+    """采购预告头（采购侧提前量，可选参与 MRP）"""
+
+    __tablename__ = "purchase_forecasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    forecast_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    supplier_name: Mapped[str] = mapped_column(String(128), default="")
+    # draft / confirmed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PurchaseForecastLine(Base):
+    __tablename__ = "purchase_forecast_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    forecast_id: Mapped[int] = mapped_column(Integer, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class MrpRun(Base):
+    """一次 MRP 运算记录"""
+
+    __tablename__ = "mrp_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # draft / generated / void
+    status: Mapped[str] = mapped_column(String(24), default="generated", index=True)
+    source_so_ids: Mapped[str] = mapped_column(Text, default="")  # 逗号分隔
+    source_stock_ids: Mapped[str] = mapped_column(Text, default="")
+    demand_count: Mapped[int] = mapped_column(Integer, default=0)
+    purchase_plan_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    production_plan_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    outsource_plan_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PurchasePlan(Base):
+    __tablename__ = "purchase_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    mrp_run_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    # draft / confirmed / released / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PurchasePlanLine(Base):
+    __tablename__ = "purchase_plan_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(Integer, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    source_type: Mapped[str] = mapped_column(String(24), default="")  # sales / stock / forecast
+    source_no: Mapped[str] = mapped_column(String(64), default="")
+    source_so_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class ProductionPlan(Base):
+    __tablename__ = "production_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    mrp_run_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProductionPlanLine(Base):
+    __tablename__ = "production_plan_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(Integer, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    bom_model_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source_type: Mapped[str] = mapped_column(String(24), default="")
+    source_no: Mapped[str] = mapped_column(String(64), default="")
+    source_so_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class OutsourcePlan(Base):
+    __tablename__ = "outsource_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    mrp_run_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OutsourcePlanLine(Base):
+    __tablename__ = "outsource_plan_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(Integer, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    process: Mapped[str] = mapped_column(String(128), default="")
+    source_type: Mapped[str] = mapped_column(String(24), default="")
+    source_no: Mapped[str] = mapped_column(String(64), default="")
+    source_so_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+# —— 阶段4：采购执行链 ——
+
+
+class PurchaseOrder(Base):
+    """采购单"""
+
+    __tablename__ = "purchase_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    po_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    supplier_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    supplier_name: Mapped[str] = mapped_column(String(128), default="")
+    source_plan_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    source_plan_no: Mapped[str] = mapped_column(String(32), default="")
+    stock_owner: Mapped[str] = mapped_column(String(64), default="internal", index=True)
+    # draft / confirmed / partial / closed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PurchaseOrderLine(Base):
+    __tablename__ = "purchase_order_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    po_id: Mapped[int] = mapped_column(Integer, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    arrived_qty: Mapped[float] = mapped_column(Float, default=0)
+    pass_qty: Mapped[float] = mapped_column(Float, default=0)
+    fail_qty: Mapped[float] = mapped_column(Float, default=0)
+    received_qty: Mapped[float] = mapped_column(Float, default=0)
+    returned_qty: Mapped[float] = mapped_column(Float, default=0)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class PurchaseArrivalBarcode(Base):
+    __tablename__ = "purchase_arrival_barcodes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    po_id: Mapped[int] = mapped_column(Integer, index=True)
+    po_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    barcode: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="")
+    qty: Mapped[float] = mapped_column(Float, default=1)
+    scanned_by: Mapped[str] = mapped_column(String(64), default="")
+    scanned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class PurchaseInspect(Base):
+    __tablename__ = "purchase_inspects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    inspect_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    po_id: Mapped[int] = mapped_column(Integer, index=True)
+    po_no: Mapped[str] = mapped_column(String(32), default="")
+    warehouse_code: Mapped[str] = mapped_column(String(32), default="INSPECT")
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    result: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    judged_by: Mapped[str] = mapped_column(String(64), default="")
+    judged_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PurchaseInspectLine(Base):
+    __tablename__ = "purchase_inspect_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    inspect_id: Mapped[int] = mapped_column(Integer, index=True)
+    po_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    pass_qty: Mapped[float] = mapped_column(Float, default=0)
+    fail_qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class PurchaseReceipt(Base):
+    __tablename__ = "purchase_receipts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    receipt_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    po_id: Mapped[int] = mapped_column(Integer, index=True)
+    po_no: Mapped[str] = mapped_column(String(32), default="")
+    inspect_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    warehouse_code: Mapped[str] = mapped_column(String(32), default="GOOD")
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    posted_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PurchaseReceiptLine(Base):
+    __tablename__ = "purchase_receipt_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    receipt_id: Mapped[int] = mapped_column(Integer, index=True)
+    po_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class PurchaseReturn(Base):
+    __tablename__ = "purchase_returns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    return_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    po_id: Mapped[int] = mapped_column(Integer, index=True)
+    po_no: Mapped[str] = mapped_column(String(32), default="")
+    inspect_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    warehouse_code: Mapped[str] = mapped_column(String(32), default="RETURN")
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PurchaseReturnLine(Base):
+    __tablename__ = "purchase_return_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    return_id: Mapped[int] = mapped_column(Integer, index=True)
+    po_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class ApPayableStub(Base):
+    """应付台账（采购/委外入库等过账挂钩；阶段9核销）"""
+
+    __tablename__ = "ap_payable_stubs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_type: Mapped[str] = mapped_column(String(32), default="purchase_receipt", index=True)
+    source_id: Mapped[int] = mapped_column(Integer, index=True)
+    source_no: Mapped[str] = mapped_column(String(32), default="")
+    supplier_name: Mapped[str] = mapped_column(String(128), default="")
+    amount: Mapped[float] = mapped_column(Float, default=0)
+    settled_amount: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# —— 阶段5：生产执行链 ——
+
+
+class ProductionOrder(Base):
+    """生产单"""
+
+    __tablename__ = "production_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mo_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    source_plan_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    source_plan_no: Mapped[str] = mapped_column(String(32), default="")
+    source_so_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    source_so_no: Mapped[str] = mapped_column(String(32), default="")
+    bom_model_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    stock_owner: Mapped[str] = mapped_column(String(64), default="internal", index=True)
+    issued_sets: Mapped[float] = mapped_column(Float, default=0)
+    qa_pass_qty: Mapped[float] = mapped_column(Float, default=0)
+    qa_fail_qty: Mapped[float] = mapped_column(Float, default=0)
+    fg_qty: Mapped[float] = mapped_column(Float, default=0)
+    # draft / released / issuing / in_process / qa / fg_done / closed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProductionBarcode(Base):
+    __tablename__ = "production_barcodes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mo_id: Mapped[int] = mapped_column(Integer, index=True)
+    barcode: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    source_so_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    scanned_by: Mapped[str] = mapped_column(String(64), default="")
+    scanned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class ProdMaterialDoc(Base):
+    """生产领料/补料/退料单头"""
+
+    __tablename__ = "prod_material_docs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    doc_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # issue / supplement / return
+    kind: Mapped[str] = mapped_column(String(16), default="issue", index=True)
+    mo_id: Mapped[int] = mapped_column(Integer, index=True)
+    mo_no: Mapped[str] = mapped_column(String(32), default="")
+    # draft / confirmed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    confirmed_by: Mapped[str] = mapped_column(String(64), default="")
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProdMaterialLine(Base):
+    __tablename__ = "prod_material_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    doc_id: Mapped[int] = mapped_column(Integer, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class ProductionQa(Base):
+    __tablename__ = "production_qas"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    qa_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    mo_id: Mapped[int] = mapped_column(Integer, index=True)
+    mo_no: Mapped[str] = mapped_column(String(32), default="")
+    # draft / judged / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    # pending / pass / fail / partial
+    result: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    pass_qty: Mapped[float] = mapped_column(Float, default=0)
+    fail_qty: Mapped[float] = mapped_column(Float, default=0)
+    judged_by: Mapped[str] = mapped_column(String(64), default="")
+    judged_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class FgReceipt(Base):
+    __tablename__ = "fg_receipts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    receipt_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    mo_id: Mapped[int] = mapped_column(Integer, index=True)
+    mo_no: Mapped[str] = mapped_column(String(32), default="")
+    qa_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="")
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    warehouse_code: Mapped[str] = mapped_column(String(32), default="GOOD")
+    # 入库直接出库开关（阶段7生成出库草稿）
+    direct_outbound: Mapped[bool] = mapped_column(Boolean, default=False)
+    # draft / posted / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    posted_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# —— 阶段6：委外执行链 ——
+
+
+class OutsourceOrder(Base):
+    """委外单"""
+
+    __tablename__ = "outsource_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ww_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    supplier_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    supplier_name: Mapped[str] = mapped_column(String(128), default="")
+    process: Mapped[str] = mapped_column(String(128), default="")
+    source_plan_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    source_plan_no: Mapped[str] = mapped_column(String(32), default="")
+    stock_owner: Mapped[str] = mapped_column(String(64), default="internal", index=True)
+    # draft / confirmed / shipped / partial / closed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OutsourceOrderLine(Base):
+    __tablename__ = "outsource_order_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ww_id: Mapped[int] = mapped_column(Integer, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    process: Mapped[str] = mapped_column(String(128), default="")
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    shipped_qty: Mapped[float] = mapped_column(Float, default=0)
+    pass_qty: Mapped[float] = mapped_column(Float, default=0)
+    fail_qty: Mapped[float] = mapped_column(Float, default=0)
+    received_qty: Mapped[float] = mapped_column(Float, default=0)
+    returned_qty: Mapped[float] = mapped_column(Float, default=0)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class OutsourceShipDoc(Base):
+    """发料给委外（扣内部库存，记在途语义）"""
+
+    __tablename__ = "outsource_ship_docs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ship_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    ww_id: Mapped[int] = mapped_column(Integer, index=True)
+    ww_no: Mapped[str] = mapped_column(String(32), default="")
+    # draft / confirmed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OutsourceShipLine(Base):
+    __tablename__ = "outsource_ship_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ship_id: Mapped[int] = mapped_column(Integer, index=True)
+    ww_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="")
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+
+
+class OutsourceBarcode(Base):
+    __tablename__ = "outsource_barcodes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ww_id: Mapped[int] = mapped_column(Integer, index=True)
+    barcode: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="")
+    qty: Mapped[float] = mapped_column(Float, default=1)
+    scanned_by: Mapped[str] = mapped_column(String(64), default="")
+    scanned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OutsourceInspect(Base):
+    __tablename__ = "outsource_inspects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    inspect_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    ww_id: Mapped[int] = mapped_column(Integer, index=True)
+    ww_no: Mapped[str] = mapped_column(String(32), default="")
+    warehouse_code: Mapped[str] = mapped_column(String(32), default="INSPECT")
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    result: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    judged_by: Mapped[str] = mapped_column(String(64), default="")
+    judged_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OutsourceInspectLine(Base):
+    __tablename__ = "outsource_inspect_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    inspect_id: Mapped[int] = mapped_column(Integer, index=True)
+    ww_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="")
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    pass_qty: Mapped[float] = mapped_column(Float, default=0)
+    fail_qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+
+
+class OutsourceReceipt(Base):
+    """委托入库单（合格）"""
+
+    __tablename__ = "outsource_receipts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    receipt_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    ww_id: Mapped[int] = mapped_column(Integer, index=True)
+    ww_no: Mapped[str] = mapped_column(String(32), default="")
+    inspect_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    warehouse_code: Mapped[str] = mapped_column(String(32), default="GOOD")
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    posted_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OutsourceReceiptLine(Base):
+    __tablename__ = "outsource_receipt_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    receipt_id: Mapped[int] = mapped_column(Integer, index=True)
+    ww_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="")
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+
+
+class OutsourceReturn(Base):
+    __tablename__ = "outsource_returns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    return_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    ww_id: Mapped[int] = mapped_column(Integer, index=True)
+    ww_no: Mapped[str] = mapped_column(String(32), default="")
+    inspect_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    warehouse_code: Mapped[str] = mapped_column(String(32), default="RETURN")
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OutsourceReturnLine(Base):
+    __tablename__ = "outsource_return_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    return_id: Mapped[int] = mapped_column(Integer, index=True)
+    ww_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="")
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+
+
+# —— 阶段7：销售出货 ——
+
+
+class SalesIssue(Base):
+    """销售出库单（按销售订单行扣成品）"""
+
+    __tablename__ = "sales_issues"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    issue_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    so_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    so_no: Mapped[str] = mapped_column(String(32), default="", index=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    stock_owner: Mapped[str] = mapped_column(String(64), default="internal", index=True)
+    warehouse_code: Mapped[str] = mapped_column(String(32), default="GOOD")
+    # draft / posted / delivered / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    source_fg_receipt_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SalesIssueLine(Base):
+    __tablename__ = "sales_issue_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    issue_id: Mapped[int] = mapped_column(Integer, index=True)
+    so_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    packed_qty: Mapped[float] = mapped_column(Float, default=0)
+
+
+class SalesIssueBarcode(Base):
+    """出库打包条码（MVP：挂出库单，可走现有箱标签页）"""
+
+    __tablename__ = "sales_issue_barcodes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    issue_id: Mapped[int] = mapped_column(Integer, index=True)
+    barcode: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="")
+    qty: Mapped[float] = mapped_column(Float, default=1)
+    box_no: Mapped[str] = mapped_column(String(64), default="")
+    scanned_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DeliveryNote(Base):
+    """发货单（业务单据）"""
+
+    __tablename__ = "delivery_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    delivery_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    issue_id: Mapped[int] = mapped_column(Integer, index=True)
+    issue_no: Mapped[str] = mapped_column(String(32), default="")
+    so_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    so_no: Mapped[str] = mapped_column(String(32), default="")
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    # draft / confirmed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    ship_date: Mapped[str] = mapped_column(String(16), default="")
+    carrier: Mapped[str] = mapped_column(String(64), default="")
+    tracking_no: Mapped[str] = mapped_column(String(64), default="")
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    confirmed_by: Mapped[str] = mapped_column(String(64), default="")
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DeliveryNoteLine(Base):
+    __tablename__ = "delivery_note_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    delivery_id: Mapped[int] = mapped_column(Integer, index=True)
+    issue_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    so_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="")
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+
+
+class ArReceivableStub(Base):
+    """应收台账（发货确认等挂钩；阶段9核销）"""
+
+    __tablename__ = "ar_receivable_stubs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_type: Mapped[str] = mapped_column(String(32), default="delivery_note", index=True)
+    source_id: Mapped[int] = mapped_column(Integer, index=True)
+    source_no: Mapped[str] = mapped_column(String(32), default="")
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    amount: Mapped[float] = mapped_column(Float, default=0)
+    settled_amount: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# —— 阶段8：售后与仓储辅助 ——
+
+
+class ComplaintDoc(Base):
+    """业务投诉单（与品质 Excel 客诉看板分离）"""
+
+    __tablename__ = "complaint_docs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    complaint_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    so_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    so_no: Mapped[str] = mapped_column(String(32), default="")
+    delivery_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    delivery_no: Mapped[str] = mapped_column(String(32), default="")
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    title: Mapped[str] = mapped_column(String(256), default="")
+    content: Mapped[str] = mapped_column(String(1024), default="")
+    # draft / open / closed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SalesReturn(Base):
+    """销售出库退货单"""
+
+    __tablename__ = "sales_returns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    return_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    so_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    so_no: Mapped[str] = mapped_column(String(32), default="")
+    issue_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    issue_no: Mapped[str] = mapped_column(String(32), default="")
+    delivery_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    delivery_no: Mapped[str] = mapped_column(String(32), default="")
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    stock_owner: Mapped[str] = mapped_column(String(64), default="internal", index=True)
+    warehouse_code: Mapped[str] = mapped_column(String(32), default="RETURN")
+    # draft / confirmed / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    # none / reissue / replenish
+    branch: Mapped[str] = mapped_column(String(24), default="none", index=True)
+    reissue_issue_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reissue_delivery_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    replenish_mo_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    confirmed_by: Mapped[str] = mapped_column(String(64), default="")
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SalesReturnLine(Base):
+    __tablename__ = "sales_return_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    return_id: Mapped[int] = mapped_column(Integer, index=True)
+    so_line_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+
+
+class StocktakeDoc(Base):
+    """库存盘点单"""
+
+    __tablename__ = "stocktake_docs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stocktake_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    stock_owner: Mapped[str] = mapped_column(String(64), default="internal", index=True)
+    # draft / posted / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class StocktakeLine(Base):
+    __tablename__ = "stocktake_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stocktake_id: Mapped[int] = mapped_column(Integer, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    book_qty: Mapped[float] = mapped_column(Float, default=0)
+    count_qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+
+
+class TransferDoc(Base):
+    """库存调拨 / 库存出库（kind=transfer|out）"""
+
+    __tablename__ = "transfer_docs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    doc_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # transfer / out
+    kind: Mapped[str] = mapped_column(String(16), default="transfer", index=True)
+    from_owner: Mapped[str] = mapped_column(String(64), default="internal", index=True)
+    to_owner: Mapped[str] = mapped_column(String(64), default="", index=True)
+    # draft / posted / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class TransferLine(Base):
+    __tablename__ = "transfer_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    transfer_id: Mapped[int] = mapped_column(Integer, index=True)
+    material_code: Mapped[str] = mapped_column(String(128), default="", index=True)
+    material_name: Mapped[str] = mapped_column(String(256), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+
+
+# —— 阶段9：财务应收应付与出纳 ——
+
+
+class CashAccount(Base):
+    """出纳账户"""
+
+    __tablename__ = "cash_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    # cash / bank
+    kind: Mapped[str] = mapped_column(String(16), default="bank", index=True)
+    opening_balance: Mapped[float] = mapped_column(Float, default=0)
+    balance: Mapped[float] = mapped_column(Float, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CashLedger(Base):
+    """出纳流水"""
+
+    __tablename__ = "cash_ledgers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, index=True)
+    account_code: Mapped[str] = mapped_column(String(32), default="")
+    # payment / receipt / manual / reimbursement / transfer_out / transfer_in
+    movement_type: Mapped[str] = mapped_column(String(24), index=True)
+    amount: Mapped[float] = mapped_column(Float, default=0)  # 正=收入，负=支出
+    balance_after: Mapped[float] = mapped_column(Float, default=0)
+    ref_type: Mapped[str] = mapped_column(String(32), default="")
+    ref_no: Mapped[str] = mapped_column(String(32), default="")
+    counterparty: Mapped[str] = mapped_column(String(128), default="")
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    operator: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class PaymentRequest(Base):
+    """付款申请单（需审批）"""
+
+    __tablename__ = "payment_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    supplier_name: Mapped[str] = mapped_column(String(128), default="")
+    amount: Mapped[float] = mapped_column(Float, default=0)
+    # draft / submitted / approved / rejected / paid / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    approved_by: Mapped[str] = mapped_column(String(64), default="")
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    payment_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PaymentRequestLine(Base):
+    __tablename__ = "payment_request_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_id: Mapped[int] = mapped_column(Integer, index=True)
+    ap_id: Mapped[int] = mapped_column(Integer, index=True)
+    ap_source_no: Mapped[str] = mapped_column(String(32), default="")
+    amount: Mapped[float] = mapped_column(Float, default=0)
+
+
+class PaymentDoc(Base):
+    """付款单"""
+
+    __tablename__ = "payment_docs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    payment_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    request_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    request_no: Mapped[str] = mapped_column(String(32), default="")
+    account_id: Mapped[int] = mapped_column(Integer, index=True)
+    supplier_name: Mapped[str] = mapped_column(String(128), default="")
+    amount: Mapped[float] = mapped_column(Float, default=0)
+    # draft / posted / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ReceiptDoc(Base):
+    """收款单"""
+
+    __tablename__ = "receipt_docs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    receipt_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    account_id: Mapped[int] = mapped_column(Integer, index=True)
+    customer_name: Mapped[str] = mapped_column(String(128), default="")
+    amount: Mapped[float] = mapped_column(Float, default=0)
+    # draft / posted / void
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ReceiptDocLine(Base):
+    __tablename__ = "receipt_doc_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    receipt_id: Mapped[int] = mapped_column(Integer, index=True)
+    ar_id: Mapped[int] = mapped_column(Integer, index=True)
+    ar_source_no: Mapped[str] = mapped_column(String(32), default="")
+    amount: Mapped[float] = mapped_column(Float, default=0)
+
+
+class InvoiceReg(Base):
+    """发票登记（简版）"""
+
+    __tablename__ = "invoice_regs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    invoice_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    # in / out
+    direction: Mapped[str] = mapped_column(String(8), default="in", index=True)
+    counterparty: Mapped[str] = mapped_column(String(128), default="")
+    amount: Mapped[float] = mapped_column(Float, default=0)
+    tax_amount: Mapped[float] = mapped_column(Float, default=0)
+    related_doc_no: Mapped[str] = mapped_column(String(32), default="")
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class FinBill(Base):
+    """应收/应付票据（简版）"""
+
+    __tablename__ = "fin_bills"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bill_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    # receivable / payable
+    bill_kind: Mapped[str] = mapped_column(String(16), default="receivable", index=True)
+    counterparty: Mapped[str] = mapped_column(String(128), default="")
+    amount: Mapped[float] = mapped_column(Float, default=0)
+    due_date: Mapped[str] = mapped_column(String(16), default="")
+    # draft / held / settled / void
+    status: Mapped[str] = mapped_column(String(24), default="held", index=True)
+    remark: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# —— 阶段10：总账与月末 ——
+
+
+class GlAccount(Base):
+    """会计科目"""
+
+    __tablename__ = "gl_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    # asset / liability / equity / cost / income / expense
+    category: Mapped[str] = mapped_column(String(16), default="asset", index=True)
+    # debit / credit 余额方向
+    balance_dir: Mapped[str] = mapped_column(String(8), default="debit")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    balance: Mapped[float] = mapped_column(Float, default=0)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class GlPeriod(Base):
+    """会计期间"""
+
+    __tablename__ = "gl_periods"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    period: Mapped[str] = mapped_column(String(8), unique=True, index=True)  # YYYYMM
+    # open / closing / closed
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    opened_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+
+
+class GlVoucher(Base):
+    """记账凭证"""
+
+    __tablename__ = "gl_vouchers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    voucher_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    period: Mapped[str] = mapped_column(String(8), default="", index=True)
+    # draft / reviewed / posted / void
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    source_type: Mapped[str] = mapped_column(String(32), default="manual", index=True)
+    source_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    source_no: Mapped[str] = mapped_column(String(32), default="")
+    summary: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    reviewed_by: Mapped[str] = mapped_column(String(64), default="")
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    posted_by: Mapped[str] = mapped_column(String(64), default="")
+    posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class GlVoucherLine(Base):
+    __tablename__ = "gl_voucher_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    voucher_id: Mapped[int] = mapped_column(Integer, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    account_code: Mapped[str] = mapped_column(String(32), default="", index=True)
+    account_name: Mapped[str] = mapped_column(String(128), default="")
+    debit: Mapped[float] = mapped_column(Float, default=0)
+    credit: Mapped[float] = mapped_column(Float, default=0)
+    summary: Mapped[str] = mapped_column(String(256), default="")
+
+
+class FixedAsset(Base):
+    """固定资产（简版）"""
+
+    __tablename__ = "fixed_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    asset_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    original_value: Mapped[float] = mapped_column(Float, default=0)
+    residual_rate: Mapped[float] = mapped_column(Float, default=0.05)
+    months: Mapped[int] = mapped_column(Integer, default=36)
+    accumulated_depr: Mapped[float] = mapped_column(Float, default=0)
+    # active / disposed
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    remark: Mapped[str] = mapped_column(String(256), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

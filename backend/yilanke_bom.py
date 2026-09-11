@@ -125,7 +125,7 @@ def parse_yilanke_rows(
 ) -> ParsedBom:
     headers = _header_map(rows[header_idx])
     if not is_yilanke_bom_headers(headers):
-        raise ValueError("非亿兰科 BOM 格式（需含：子项物料编码 + 用量）")
+        raise ValueError("非该客户 BOM 格式（需含：子项物料编码 + 用量）")
 
     idx_seq = _pick_col(headers, "项次")
     idx_code = _pick_col(headers, "子项物料编码")
@@ -248,7 +248,7 @@ def parse_yilanke_bytes(content: bytes, filename: str, *, role: str = "") -> Par
     rows, header_idx, sheet_name = _load_yilanke_rows_from_bytes(content, filename)
     if header_idx is None or header_idx < 0:
         raise ValueError(
-            f"未找到亿兰科 BOM 表头（子项物料编码 + 用量）。文件：{filename}"
+            f"未找到 BOM 表头（子项物料编码 + 用量）。文件：{filename}"
             + (f"（已扫 sheet：{sheet_name}）" if sheet_name else "")
         )
     parsed = parse_yilanke_rows(rows, header_idx, role=role, filename=filename)
@@ -434,7 +434,7 @@ def import_yilanke_pair_bytes(
     if not customer:
         return {"status": "failed", "message": f"未知内部代码: {internal_code}", "lines": 0}
     if ic != "A120" and (customer.get("customer_id") or "") != "yilanke":
-        return {"status": "failed", "message": "SMT+DIP 合并导入仅支持亿兰科（A120）", "lines": 0}
+        return {"status": "failed", "message": "SMT+DIP 合并导入仅支持对应客户（A120）", "lines": 0}
     if not pn:
         return {"status": "failed", "message": "请先选择在制订单后再导入", "lines": 0}
     if not smt_content:

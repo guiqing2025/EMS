@@ -466,3 +466,53 @@ def build_substitute_details(
             continue
         details.append(alt)
     return details
+
+
+def collect_substitute_details(
+    material_code: str,
+    stock_map: dict = None,
+    *,
+    customer_id: str = "",
+    parent_code: str = "",
+    only_with_stock: bool = False,
+    **_kwargs,
+) -> list[dict]:
+    return build_substitute_details(
+        material_code,
+        stock_map or {},
+        customer_id=customer_id,
+        parent_code=parent_code,
+        only_with_stock=only_with_stock,
+    )
+
+
+def format_substitute_export_fields(details: list[dict] | None = None) -> dict:
+    details = details or []
+    codes = [str(d.get("code") or d.get("material_code") or "").strip() for d in details]
+    codes = [c for c in codes if c]
+    return {
+        "substitute_codes": ",".join(codes),
+        "substitute_count": len(codes),
+        "substitutes": details,
+    }
+
+
+def load_warehouse_by_code(db, customer_id: str = "") -> dict:
+    """开发补齐：无库存表时返回空映射。"""
+    _ = (db, customer_id)
+    return {}
+
+
+def count_rules_by_order_parent(db, customer_id: str, pairs: list) -> dict:
+    """按订单父件统计替代规则条数（开发补齐，委托 count_rules_by_parent）。"""
+    parents: list[str] = []
+    for item in pairs or []:
+        if isinstance(item, (list, tuple)) and item:
+            parents.append(str(item[0]))
+        elif isinstance(item, dict):
+            parents.append(str(item.get("parent_code") or item.get("model_code") or ""))
+        else:
+            parents.append(str(item or ""))
+    parents = [p for p in parents if p]
+    return count_rules_by_parent(db, customer_id, parents)
+

@@ -452,7 +452,7 @@ class DashboardStats(BaseModel):
     srm_live_total: Optional[int] = None
     date_range_start: Optional[str] = None
     date_range_end: Optional[str] = None
-    data_source: str = "菲利斯SRM · 订单跟踪 + 对账明细"
+    data_source: str = "SRM · 订单跟踪 + 对账明细"
     sync_note: Optional[str] = None
     fee_source: str = "订单行含税金额"
 

@@ -15,6 +15,32 @@ export interface ProcessScanResult {
   id?: number
   aoi_result?: string
   ict_result?: string
+  pre_oven_aoi_result?: string
+  pre_oven_confirm_required?: boolean
+  pre_oven_fail_reason?: string
+  pre_oven_fail_items?: PreOvenFailItem[]
+}
+
+export interface PreOvenFailItem {
+  ref: string
+  part_type?: string
+  part_type_zh?: string
+  defect?: string
+  defect_zh?: string
+  label: string
+}
+
+export interface SmtScanResult {
+  status: 'ok' | 'blocked' | 'already_scanned' | 'already_aoi'
+  message: string
+  barcode?: string
+  purchase_no?: string | null
+  model_code?: string | null
+  scanned_at?: string | null
+  operator?: string | null
+  id?: number
+  aoi_result?: string
+  is_new?: boolean
 }
 
 export interface ProcessScanList {
@@ -40,6 +66,41 @@ export async function submitProcessScan(payload: {
   operator?: string
 }) {
   return apiFetch<ProcessScanResult>('/process-scan/scan', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+/** 后焊产线：炉前 AOI 真不良复判（独立于 /scan 热路径） */
+export async function confirmPreOvenAoiLine(payload: {
+  barcode: string
+  action: 'pass' | 'fail'
+  purchase_no?: string
+  model_code?: string
+  remark?: string
+}) {
+  return apiFetch<{
+    status: string
+    action: string
+    barcode: string
+    message: string
+    gate_ok?: boolean
+    fail_reason?: string
+    already_confirmed?: boolean
+  }>('/process-scan/pre-oven-aoi/line-confirm', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function submitSmtScan(payload: {
+  barcode: string
+  result: 'PASS' | 'FAIL' | string
+  purchase_no?: string
+  model_code?: string
+  operator?: string
+}) {
+  return apiFetch<SmtScanResult>('/process-scan/smt', {
     method: 'POST',
     body: JSON.stringify(payload),
   })

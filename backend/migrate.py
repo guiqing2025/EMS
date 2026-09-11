@@ -2205,6 +2205,93 @@ def migrate():
         if printed_cols and "label_printed_by" not in printed_cols:
             conn.execute(text("ALTER TABLE shipment_boxes ADD COLUMN label_printed_by VARCHAR(64)"))
 
+        # 阶段1：报价单挂询价 / 供应商成本 / 卖价
+        quote_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(quote_orders)")).fetchall()
+        } if conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='quote_orders' LIMIT 1")
+        ).fetchone() else set()
+        if quote_cols:
+            for col, typedef in {
+                "inquiry_id": "INTEGER",
+                "customer_id": "INTEGER",
+                "quote_kind": "VARCHAR(16) DEFAULT 'cost'",
+                "supplier_name": "VARCHAR(128) DEFAULT ''",
+                "supplier_cost": "FLOAT DEFAULT 0",
+                "sell_price": "FLOAT DEFAULT 0",
+            }.items():
+                if col not in quote_cols:
+                    conn.execute(text(f"ALTER TABLE quote_orders ADD COLUMN {col} {typedef}"))
+
+        # 阶段2：销售/打样扩展字段
+        so_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(erp_sales_orders)")).fetchall()
+        } if conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='erp_sales_orders' LIMIT 1")
+        ).fetchone() else set()
+        if so_cols:
+            for col, typedef in {
+                "sample_order_id": "INTEGER",
+                "external_po_no": "VARCHAR(64) DEFAULT ''",
+                "source_srm_line_key": "VARCHAR(128) DEFAULT ''",
+                "require_bom": "BOOLEAN DEFAULT 0",
+            }.items():
+                if col not in so_cols:
+                    conn.execute(text(f"ALTER TABLE erp_sales_orders ADD COLUMN {col} {typedef}"))
+
+        sol_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(erp_sales_order_lines)")).fetchall()
+        } if conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='erp_sales_order_lines' LIMIT 1")
+        ).fetchone() else set()
+        if sol_cols:
+            for col, typedef in {
+                "shipped_qty": "FLOAT DEFAULT 0",
+                "bom_model_id": "INTEGER",
+            }.items():
+                if col not in sol_cols:
+                    conn.execute(text(f"ALTER TABLE erp_sales_order_lines ADD COLUMN {col} {typedef}"))
+
+        sample_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(sample_orders)")).fetchall()
+        } if conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sample_orders' LIMIT 1")
+        ).fetchone() else set()
+        if sample_cols:
+            for col, typedef in {
+                "unit": "VARCHAR(16) DEFAULT 'PCS'",
+                "unit_price": "FLOAT DEFAULT 0",
+                "due_date": "VARCHAR(16) DEFAULT ''",
+                "sample_attr": "VARCHAR(64) DEFAULT 'new_product'",
+                "bom_model_id": "INTEGER",
+            }.items():
+                if col not in sample_cols:
+                    conn.execute(text(f"ALTER TABLE sample_orders ADD COLUMN {col} {typedef}"))
+
+        # 阶段9：应付/应收核销字段
+        for table, col, typedef in (
+            ("ap_payable_stubs", "settled_amount", "FLOAT DEFAULT 0"),
+            ("ar_receivable_stubs", "settled_amount", "FLOAT DEFAULT 0"),
+        ):
+            exists = conn.execute(
+                text(f"SELECT 1 FROM sqlite_master WHERE type='table' AND name='{table}' LIMIT 1")
+            ).fetchone()
+            if not exists:
+                continue
+            cols = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()}
+            if col not in cols:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {typedef}"))
+
+        # 客户三证图片路径
+        cust_exists = conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='erp_customers' LIMIT 1")
+        ).fetchone()
+        if cust_exists:
+            cust_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(erp_customers)")).fetchall()}
+            for col in ("cert_business", "cert_org", "cert_tax"):
+                if col not in cust_cols:
+                    conn.execute(text(f"ALTER TABLE erp_customers ADD COLUMN {col} VARCHAR(512) DEFAULT ''"))
+
         conn.commit()
 
 

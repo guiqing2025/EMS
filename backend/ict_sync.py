@@ -957,3 +957,9 @@ def boards_for_ict_purchase(
         "result_filter": result_filter or "",
         "items": items,
     }
+
+
+def try_sync_ict_for_barcode(db: Session, barcode: str, *, timeout_sec: float = 8.0) -> dict[str, Any]:
+    """开发补齐：单条码 ICT 即时同步占位。"""
+    _ = (db, barcode, timeout_sec)
+    return {"ok": False, "synced": 0, "message": "try_sync_ict_for_barcode 开发桩"}

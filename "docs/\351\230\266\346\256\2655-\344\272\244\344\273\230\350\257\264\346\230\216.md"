@@ -1,0 +1,50 @@
+# 阶段 5 交付说明 — 生产执行链
+
+## 里程碑 M5
+
+生产单：下达 →（条码）→ BOM 领料 → QA → 成品入库；PMC 可见进度。不合格禁止成品入库。
+
+## 已上线
+
+| 事项 | 能力 |
+|------|------|
+| 5.1 生产单 | 手工建单；从生产计划下推；状态草稿→下达→发料/在制→QA→入库完成 |
+| 5.2 生产条码 | 挂板码/镭雕码到生产单（可关联销售单） |
+| 5.3 领/补/退料 | 可按 BOM 展开领料；确认扣库存；退料回库存 |
+| 5.5 QA | 从生产单建 QA；判定合格/不合格/部分 |
+| 5.6 成品入库 | 仅合格数量过账入 GOOD（`source=production`） |
+| 5.7 入库直接出库 | 单据开关 `direct_outbound`（阶段7生成出库草稿） |
+| PMC | `/api/production/pmc-board` 与生产单页进度 |
+
+## 硬规则
+
+- QA 无合格数量 → 禁止生成/过账成品入库
+- 领料可用量不足 → 拒绝确认
+- 成品入库仓强制 `GOOD`
+
+## API
+
+前缀：`/api/production`
+
+- `/orders`、`/orders/from-plan/{id}`、`/orders/{id}/status`、`/barcodes`
+- `/materials`、`/materials/{id}/confirm`
+- `/qa/from-mo/{id}`、`/qa/{id}/judge`
+- `/fg-receipts/from-qa/{id}`、`/fg-receipts/{id}/post`
+- `/pmc-board`
+
+## 前端
+
+`/production/orders`、`/material`、`/qa`、`/fg-receipt`
+
+## 自测
+
+```bash
+cd backend
+EMS_DB=ems.dev.db EMS_USE_SQLITE=1 .venv/bin/python scripts/sim_phase05_production.py
+```
+
+最近一次（2026-09-09）：**通过 8 / 失败 0**。
+
+## 刻意后置
+
+过站/ICT/AOI 深度挂载、镭雕批次强绑定、入库直接出库真正生成销售出库草稿（阶段7）。

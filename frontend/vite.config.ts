@@ -4,6 +4,9 @@ import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [vue()],
+  define: {
+    __EMS_BUILD_AT__: JSON.stringify(new Date().toISOString()),
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

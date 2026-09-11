@@ -315,7 +315,7 @@ function updateNotifyBadge(count) {
     document.title = `(${count}) 新订单 · EMS 订单中心`;
   } else {
     badge.classList.add('hidden');
-    document.title = '深圳鼎雄电子科技有限公司 · EMS 订单中心';
+    document.title = '景立创 · EMS 订单中心';
   }
 }
 

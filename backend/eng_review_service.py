@@ -825,3 +825,56 @@ def mark_inbox_read(db: Session, inbox_id: int) -> None:
 
 def unread_inbox_count(db: Session) -> int:
     return db.query(EngReviewInbox).filter(EngReviewInbox.status == "unread").count()
+
+
+def sync_bom_status_after_asset_change(
+    db: Session,
+    *,
+    bom_model_id: Optional[int] = None,
+    internal_code: str = "",
+    model_code: str = "",
+    purchase_no: str = "",
+    note: str = "",
+) -> None:
+    """资料变更后同步审核状态（开发补齐：有机型则尝试重开审核）。"""
+    _ = (internal_code, model_code, purchase_no, note)
+    if not bom_model_id:
+        return
+    try:
+        reopen_bom_review_after_edit(db, bom_model_id)
+    except Exception:
+        return
+
+
+def eng_status_summary(db: Session, *, internal_code: str = "") -> dict:
+    from models import BomModel
+
+    q = db.query(BomModel).filter(BomModel.is_active.is_(True))
+    ic = (internal_code or "").strip().upper()
+    if ic:
+        q = q.filter(BomModel.internal_code == ic)
+    rows = q.limit(5000).all()
+    by_status: dict[str, int] = {}
+    by_customer: dict[str, dict] = {}
+    for row in rows:
+        st = (getattr(row, "eng_review_status", None) or "draft") or "draft"
+        by_status[st] = by_status.get(st, 0) + 1
+        code = (row.internal_code or "").strip() or "unknown"
+        bucket = by_customer.setdefault(code, {"internal_code": code, "total": 0, "by_status": {}})
+        bucket["total"] += 1
+        bucket["by_status"][st] = bucket["by_status"].get(st, 0) + 1
+    return {
+        "total": len(rows),
+        "by_status": by_status,
+        "by_customer": list(by_customer.values()),
+        "internal_code": ic,
+        "stub": False,
+    }
+
+
+def eng_status_board(db: Session, *, internal_code: str = "") -> dict:
+    summary = eng_status_summary(db, internal_code=internal_code)
+    summary["items"] = []
+    summary["message"] = "状态看板明细在完整包中提供；当前返回汇总"
+    return summary
+

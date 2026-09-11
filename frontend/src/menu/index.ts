@@ -11,7 +11,21 @@ export interface MenuItem {
   /** 若设置，仅这些用户名可见（不区分大小写）；仍可叠加 roles */
   usernames?: string[]
   children?: MenuItem[]
+  /** 流程图节点尚未开发：菜单可见，进入占位页 */
+  comingSoon?: boolean
+  phase?: string
 }
+
+/** 流程图泳道常用角色组合 */
+const R_ALL_BIZ = ['admin', 'sales', 'pmc', 'planner']
+const R_PLAN = ['admin', 'pmc', 'planner']
+const R_BUY = ['admin', 'purchasing', 'pmc', 'planner', 'warehouse']
+const R_PROD = ['admin', 'production', 'planner', 'pmc', 'floor', 'packing', 'laser', 'smt_scan']
+const R_QC = ['admin', 'quality', 'pmc', 'planner', 'eng_auditor']
+const R_WH = ['admin', 'warehouse', 'pmc', 'planner', 'purchasing', 'packing', 'eng_auditor']
+const R_FIN = ['admin', 'finance', 'pmc']
+const R_ENG = ['admin', 'planner', 'engineering', 'eng_auditor', 'eng_importer', 'eng_viewer', 'pmc']
+const R_SYS = ['admin', 'pmc']
 
 export function canAccessMenu(item: MenuItem, user: AuthUser | null): boolean {
   if (!user) return false
@@ -22,20 +36,17 @@ export function canAccessMenu(item: MenuItem, user: AuthUser | null): boolean {
   const inUsers = hasUsers && item.usernames!.map((u) => u.toLowerCase()).includes(name)
   const hasRoles = !!(item.roles && item.roles.length)
 
-  // 账号子页权限（立即生效）：有 module_pages 时以勾选为准
   const pages = user.module_pages
   if (Array.isArray(pages)) {
     if (item.children?.length) {
       return item.children.some((c) => canAccessMenu(c, user))
     }
     if (!pages.includes(item.key)) return false
-    // 仅「纯用户名白名单页」（无 roles）才再卡一次；有 roles 时 usernames 是额外放行（如 dxsmt001）
     if (hasUsers && !hasRoles && !inUsers) return false
     return true
   }
-  // 兼容：尚未下发 module_pages 时走角色/白名单
   if (user.role === 'pmc') {
-    if (item.key === 'dashboard' || item.key === 'quotation' || item.key === 'settings-account-perms') {
+    if (item.key === 'settings-account-perms') {
       return false
     }
     return true
@@ -54,7 +65,6 @@ export function filterMenu(items: MenuItem[], user: AuthUser | null): MenuItem[]
   return items
     .map((item) => {
       if (item.children?.length) {
-        // 子页权限模式下只按叶子勾选过滤，父级随子项出现
         if (
           !usePages &&
           (item.roles?.length || item.usernames?.length) &&
@@ -71,40 +81,31 @@ export function filterMenu(items: MenuItem[], user: AuthUser | null): MenuItem[]
     .filter(Boolean) as MenuItem[]
 }
 
+/**
+ * 菜单按「销售订单至销售出货流程图」重排。
+ * comingSoon=true 的节点进入占位页；已有制造能力挂到对应泳道。
+ */
 export const menuTree: MenuItem[] = [
   {
-    key: 'dashboard',
-    title: '首页看板',
-    path: '/dashboard',
-    usernames: ['dx001', 'dx002', 'dx003', 'WGQ'],
-  },
-  {
-    key: 'quotation',
-    title: '订单报价',
-    path: '/quotation',
-    roles: ['admin'],
-    usernames: ['WGQ', 'dx001'],
-  },
-  {
-    key: 'orders',
-    title: '订单中心',
-    roles: [
-      'admin',
-      'planner',
-      'warehouse',
-      'pmc',
-      'eng_auditor',
-      'eng_importer',
-      'eng_viewer',
-      'floor',
-      'packing',
-      'smt_scan',
-      'laser',
-    ],
+    key: 'master',
+    title: '主数据',
+    roles: [...R_ALL_BIZ, 'purchasing', 'warehouse', 'finance', 'production', 'quality'],
     children: [
+      { key: 'md-customers', title: '客户资料', path: '/master/customers', roles: R_ALL_BIZ },
+      { key: 'md-suppliers', title: '供应商', path: '/master/suppliers', roles: [...R_BUY, 'sales'] },
+    ],
+  },
+  {
+    key: 'sales',
+    title: '销售',
+    roles: R_ALL_BIZ,
+    children: [
+      { key: 'sales-flow', title: '订单流程', path: '/sales/flow', roles: R_ALL_BIZ },
+      { key: 'sales-order', title: '销售订单', path: '/sales/orders', roles: R_ALL_BIZ },
+      { key: 'sales-order-code', title: '订单编码', path: '/sales/order-code', roles: R_ALL_BIZ },
       {
         key: 'orders-list',
-        title: '订单列表',
+        title: '销售订单跟踪',
         path: '/orders',
         classicPage: 'orders',
         roles: [
@@ -118,65 +119,17 @@ export const menuTree: MenuItem[] = [
           'floor',
           'packing',
           'smt_scan',
+          'sales',
+          'laser',
         ],
       },
-      { key: 'laser-register', title: '镭雕登记', path: '/orders/laser', roles: ['admin', 'planner', 'laser', 'pmc'] },
-    ],
-  },
-    {
-      key: 'production-daily',
-      title: '生产日报',
-      path: '/production-daily',
-      roles: ['admin', 'planner', 'pmc', 'warehouse'],
-      usernames: ['dxsmt001'],
-    },
-  {
-    key: 'warehouse',
-    title: '仓库管理',
-    roles: ['admin', 'warehouse', 'planner', 'pmc', 'eng_auditor', 'packing'],
-    usernames: ['dxbz001', 'dxbz002', 'dxgc', 'dxgc002'],
-    children: [
-      {
-        key: 'warehouse-materials',
-        title: '物料明细',
-        path: '/warehouse',
-        roles: ['admin', 'warehouse', 'pmc', 'eng_auditor'],
-      },
-      {
-        key: 'warehouse-finished',
-        title: '成品发货',
-        path: '/warehouse/finished-goods',
-        roles: ['admin', 'warehouse', 'planner', 'pmc', 'eng_auditor', 'packing'],
-        usernames: ['dxbz001', 'dxbz002', 'dxgc', 'dxgc002'],
-      },
-      {
-        key: 'warehouse-pack-boxes',
-        title: '批次记录',
-        path: '/warehouse/pack-boxes',
-        roles: ['admin', 'warehouse', 'planner', 'pmc', 'eng_auditor', 'packing'],
-        usernames: ['dxbz001', 'dxbz002', 'dxgc', 'dxgc002'],
-      },
-      {
-        key: 'warehouse-tooling',
-        title: '工装登记',
-        path: '/warehouse/tooling',
-        classicPage: 'warehouse',
-        roles: ['admin', 'warehouse', 'planner', 'pmc', 'eng_auditor'],
-      },
     ],
   },
   {
-    key: 'engineering',
-    title: '工程管理',
-    roles: ['admin', 'planner', 'engineering', 'eng_auditor', 'eng_importer', 'eng_viewer', 'pmc'],
+    key: 'front-eng',
+    title: '前端工程',
+    roles: R_ENG,
     children: [
-      {
-        key: 'eng-docs',
-        title: '工程资料',
-        path: '/engineering',
-        classicPage: 'engineering',
-        roles: ['admin', 'planner', 'engineering', 'eng_auditor', 'eng_importer', 'eng_viewer', 'pmc'],
-      },
       {
         key: 'eng-control',
         title: '物料管制',
@@ -195,68 +148,172 @@ export const menuTree: MenuItem[] = [
         title: '工序对照',
         path: '/engineering/process',
         classicPage: 'engineering',
-        roles: ['admin', 'planner', 'pmc', 'eng_importer'],
+        roles: ['admin', 'planner', 'pmc', 'eng_importer', 'production'],
       },
     ],
   },
   {
-    key: 'scheduling',
-    title: '计划排产',
-    roles: ['admin', 'planner', 'pmc'],
+    key: 'planning',
+    title: '计划',
+    roles: R_PLAN,
     children: [
-      { key: 'sch-master', title: '生产主计划', path: '/scheduling/master-plan', roles: ['admin', 'planner', 'pmc'] },
-      { key: 'sch-smt', title: 'SMT 排产', path: '/scheduling', classicPage: 'scheduling', roles: ['admin', 'planner', 'pmc'] },
-      { key: 'sch-dip', title: 'DIP 排产', path: '/scheduling/dip', classicPage: 'scheduling', roles: ['admin', 'planner', 'pmc'] },
+      { key: 'plan-home', title: '计划首页', path: '/planning', roles: R_PLAN },
+      { key: 'plan-mc-kitting', title: 'MC齐套运算', path: '/planning/mc-kitting', roles: R_PLAN },
+      { key: 'plan-pmc-schedule', title: 'PMC排产', path: '/planning/pmc-schedule', roles: R_PLAN },
+    ],
+  },
+  {
+    key: 'purchase',
+    title: '采购',
+    roles: R_BUY,
+    children: [
+      { key: 'pur-order', title: '采购单', path: '/purchase/orders', roles: R_BUY },
+      { key: 'pur-inspect', title: '采购入库送检', path: '/purchase/inspect', roles: [...R_BUY, 'quality'] },
+      { key: 'pur-receipt', title: '采购入库 / 验收', path: '/purchase/receipt', roles: R_BUY },
+      { key: 'pur-return', title: '采购退货', path: '/purchase/return', roles: R_BUY },
+    ],
+  },
+  {
+    key: 'production',
+    title: '生产',
+    roles: R_PROD,
+    children: [
+      { key: 'prd-order', title: '生产单', path: '/production/orders', roles: R_PROD },
+      { key: 'prd-issue', title: '领料 / 补料 / 退料', path: '/production/material', roles: [...R_PROD, 'warehouse'] },
+      { key: 'prd-qa', title: '生产检查 / QA', path: '/production/qa', roles: [...R_PROD, 'quality'] },
+      { key: 'prd-fg', title: '成品入库单', path: '/production/fg-receipt', roles: [...R_PROD, 'warehouse'] },
+      {
+        key: 'production-daily',
+        title: '生产日报(过渡)',
+        path: '/production-daily',
+        roles: ['admin', 'planner', 'pmc', 'warehouse', 'production'],
+        usernames: ['dxsmt001'],
+      },
+    ],
+  },
+  {
+    key: 'outsource',
+    title: '委外',
+    roles: [...R_BUY, 'production'],
+    children: [
+      { key: 'os-order', title: '委外单', path: '/outsource/orders', roles: [...R_BUY, 'production'] },
+      { key: 'os-inspect', title: '委外入库送检', path: '/outsource/inspect', roles: [...R_BUY, 'quality'] },
+      { key: 'os-receipt', title: '委托入库', path: '/outsource/receipt', roles: R_BUY },
+      { key: 'os-return', title: '委外退货', path: '/outsource/return', roles: R_BUY },
+    ],
+  },
+  {
+    key: 'warehouse',
+    title: '仓储',
+    roles: R_WH,
+    usernames: ['dxbz001', 'dxbz002', 'dxgc', 'dxgc002'],
+    children: [
+      {
+        key: 'warehouse-materials',
+        title: '库存明细',
+        path: '/warehouse',
+        roles: ['admin', 'warehouse', 'pmc', 'eng_auditor', 'purchasing'],
+      },
+      {
+        key: 'wh-stocktake',
+        title: '库存盘点',
+        path: '/warehouse/stocktake',
+        roles: R_WH,
+      },
+      {
+        key: 'wh-transfer',
+        title: '库存调拨 / 出库',
+        path: '/warehouse/transfer',
+        roles: R_WH,
+      },
+      {
+        key: 'warehouse-tooling',
+        title: '工装登记',
+        path: '/warehouse/tooling',
+        classicPage: 'warehouse',
+        roles: ['admin', 'warehouse', 'planner', 'pmc', 'eng_auditor'],
+      },
+    ],
+  },
+  {
+    key: 'shipping',
+    title: '出货',
+    roles: [...R_WH, 'sales', 'packing'],
+    usernames: ['dxbz001', 'dxbz002', 'dxgc', 'dxgc002'],
+    children: [
+      {
+        key: 'ship-sales-issue',
+        title: '销售出库单',
+        path: '/shipping/sales-issue',
+        roles: [...R_WH, 'sales'],
+      },
+      {
+        key: 'warehouse-finished',
+        title: '成品发货(过渡)',
+        path: '/warehouse/finished-goods',
+        roles: ['admin', 'warehouse', 'planner', 'pmc', 'eng_auditor', 'packing', 'sales'],
+        usernames: ['dxbz001', 'dxbz002', 'dxgc', 'dxgc002'],
+      },
+      {
+        key: 'warehouse-pack-boxes',
+        title: '打包 / 批次记录',
+        path: '/warehouse/pack-boxes',
+        roles: ['admin', 'warehouse', 'planner', 'pmc', 'eng_auditor', 'packing'],
+        usernames: ['dxbz001', 'dxbz002', 'dxgc', 'dxgc002'],
+      },
+      {
+        key: 'ship-delivery',
+        title: '发货单',
+        path: '/shipping/delivery',
+        roles: [...R_WH, 'sales'],
+      },
+    ],
+  },
+  {
+    key: 'aftersales',
+    title: '售后',
+    roles: [...R_ALL_BIZ, 'quality', 'warehouse'],
+    children: [
+      { key: 'as-complaint', title: '投诉单', path: '/aftersales/complaint', roles: [...R_ALL_BIZ, 'quality'] },
+      { key: 'as-return', title: '销售退货 / 补发补货', path: '/aftersales/return', roles: [...R_ALL_BIZ, 'warehouse'] },
+      { key: 'as-sample', title: '借样还入 / 转销售', path: '/aftersales/sample', roles: R_ALL_BIZ },
     ],
   },
   {
     key: 'quality',
-    title: '品质管理',
-    roles: ['admin', 'planner', 'warehouse', 'pmc'],
+    title: '品质',
+    roles: R_QC,
     usernames: ['dxsmt001'],
     children: [
+      { key: 'qc-iqc', title: 'IQC / IPQC / QA', path: '/quality/gates', roles: R_QC, comingSoon: true, phase: '阶段4-5' },
       {
         key: 'qc-aoi-repair',
         title: 'AOI维修改判',
         path: '/quality/aoi-repair',
-        roles: ['admin', 'planner', 'pmc'],
+        roles: ['admin', 'planner', 'pmc', 'quality'],
         usernames: ['dxsmt001'],
       },
-      {
-        key: 'qc-process-defects',
-        title: '制程不良看板',
-        path: '/quality/process-defects',
-        roles: ['admin', 'planner', 'pmc'],
-      },
-      {
-        key: 'qc-complaints',
-        title: '客诉看板',
-        path: '/quality/complaints',
-        roles: ['admin', 'planner', 'pmc'],
-      },
-      {
-        key: 'qc-barcode-trace',
-        title: '条码追溯',
-        path: '/quality/barcode-trace',
-        roles: ['admin', 'planner', 'pmc'],
-      },
-      {
-        key: 'qc-dip-first-article',
-        title: 'DIP首件记录',
-        path: '/quality/dip-first-article',
-        roles: ['admin', 'planner', 'pmc'],
-      },
-      {
-        key: 'qc-smt-ipqc',
-        title: 'SMT巡检记录',
-        path: '/quality/smt-ipqc',
-        roles: ['admin', 'planner', 'pmc'],
-      },
+      { key: 'qc-process-defects', title: '制程不良', path: '/quality/process-defects', roles: R_QC },
+      { key: 'qc-complaints', title: '客诉看板', path: '/quality/complaints', roles: R_QC },
+      { key: 'qc-barcode-trace', title: '条码追溯', path: '/quality/barcode-trace', roles: R_QC },
+      { key: 'qc-dip-first-article', title: 'DIP首件', path: '/quality/dip-first-article', roles: R_QC },
+      { key: 'qc-smt-ipqc', title: 'SMT巡检', path: '/quality/smt-ipqc', roles: R_QC },
+    ],
+  },
+  {
+    key: 'finance',
+    title: '财务',
+    roles: R_FIN,
+    children: [
+      { key: 'fin-ap', title: '应付统计 / 付款申请', path: '/finance/ap', roles: R_FIN },
+      { key: 'fin-ar', title: '应收统计 / 收款', path: '/finance/ar', roles: R_FIN },
+      { key: 'fin-cashier', title: '出纳', path: '/finance/cashier', roles: R_FIN },
+      { key: 'fin-gl', title: '总账 / 月末', path: '/finance/gl', roles: R_FIN },
     ],
   },
   {
     key: 'hr',
-    title: '人事管理',
+    title: '人事',
     roles: ['admin', 'hr', 'pmc'],
     children: [
       { key: 'hr-staff', title: '员工档案', path: '/hr/staff', roles: ['admin', 'hr', 'pmc'] },
@@ -265,10 +322,10 @@ export const menuTree: MenuItem[] = [
   },
   {
     key: 'settings',
-    title: '系统设置',
-    roles: ['admin', 'pmc'],
+    title: '系统',
+    roles: R_SYS,
     children: [
-      { key: 'settings-sync', title: '同步状态', path: '/settings/sync', roles: ['admin', 'pmc'] },
+      { key: 'settings-sync', title: '同步 / 集成', path: '/settings/sync', roles: R_SYS },
       {
         key: 'settings-account-perms',
         title: '账号权限',
@@ -318,7 +375,6 @@ export function canAccessPath(path: string, user: AuthUser | null): boolean {
   if (!key) return true
   const pages = user.module_pages
   if (Array.isArray(pages) && !pages.includes(key)) return false
-  // 命中菜单项时叠加 usernames 白名单（如账号权限仅 WGQ）
   let matched: MenuItem | null = null
   const walk = (items: MenuItem[]) => {
     for (const it of items) {
@@ -332,7 +388,6 @@ export function canAccessPath(path: string, user: AuthUser | null): boolean {
       .trim()
       .toLowerCase()
     const inUsers = matched.usernames.map((u) => u.toLowerCase()).includes(name)
-    // 纯用户名白名单页才卡死；有 roles 时 usernames 仅为额外放行
     if (!inUsers && !(matched.roles && matched.roles.length)) return false
   }
   return true

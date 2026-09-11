@@ -78,6 +78,27 @@ class AuthPrincipal:
     def is_hr(self) -> bool:
         return self.role in ("admin", "hr")
 
+    # —— 流程图泳道角色（阶段 0 起）——
+    @property
+    def is_sales(self) -> bool:
+        return self.role in ("admin", "sales", "pmc")
+
+    @property
+    def is_purchasing(self) -> bool:
+        return self.role in ("admin", "purchasing", "pmc", "planner")
+
+    @property
+    def is_production(self) -> bool:
+        return self.role in ("admin", "production", "planner", "pmc", "floor")
+
+    @property
+    def is_quality(self) -> bool:
+        return self.role in ("admin", "quality", "pmc", "eng_auditor")
+
+    @property
+    def is_finance(self) -> bool:
+        return self.role in ("admin", "finance")
+
     @property
     def can_view_dashboard(self) -> bool:
         return (self.username or "").strip().lower() in DASHBOARD_VIEWER_USERNAMES
@@ -269,6 +290,39 @@ def require_dashboard_viewer(principal: AuthPrincipal = Depends(require_system_a
 def require_eng_import(principal: AuthPrincipal = Depends(require_system_auth)) -> AuthPrincipal:
     if not principal.can_eng_import:
         raise HTTPException(status_code=403, detail="无工程资料导入权限")
+    return principal
+
+
+def is_global_admin_username(username: str = "") -> bool:
+    name = (username or "").strip().lower()
+    return name in {"admin", "wgq", "dx001"}
+
+
+def is_ship_approver_username(username: str = "") -> bool:
+    name = (username or "").strip().lower()
+    return name in {"admin", "wgq", "dx001", "dx002"} or name.endswith("approve")
+
+
+def is_ship_operator_username(username: str = "") -> bool:
+    name = (username or "").strip().lower()
+    return bool(name)
+
+
+def require_manual_order(principal: AuthPrincipal = Depends(require_system_auth)) -> AuthPrincipal:
+    if principal.role not in ("admin", "planner", "pmc", "warehouse"):
+        raise HTTPException(status_code=403, detail="无手工建单权限")
+    return principal
+
+
+def require_order_delete(principal: AuthPrincipal = Depends(require_system_auth)) -> AuthPrincipal:
+    if principal.role not in ("admin", "planner"):
+        raise HTTPException(status_code=403, detail="无订单删除权限")
+    return principal
+
+
+def require_quality(principal: AuthPrincipal = Depends(require_system_auth)) -> AuthPrincipal:
+    if principal.role not in ("admin", "planner", "quality", "eng_auditor"):
+        raise HTTPException(status_code=403, detail="无品质模块权限")
     return principal
 
 

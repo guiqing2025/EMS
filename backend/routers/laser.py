@@ -22,6 +22,7 @@ from laser_service import (
     list_laser_batches,
     rematch_aoi_to_laser,
 )
+from pre_oven_aoi_sync import boards_for_pre_oven_purchase
 from tts_laser_sync import sync_laser_from_tts
 from system_auth import AuthPrincipal, require_admin_or_planner, require_system_auth
 
@@ -34,7 +35,7 @@ router = APIRouter(
 
 class LaserBatchIn(BaseModel):
     customer_id: str = "feilisi"
-    customer_name: str = "菲利斯"
+    customer_name: str = "客户A"
     laser_date: str = Field(..., description="YYMMDD，可多日用 \\ 分隔")
     model_code: str
     purchase_no: str
@@ -119,7 +120,7 @@ def api_delete_batch(
 async def api_import_excel(
     file: UploadFile = File(...),
     customer_id: str = Query("feilisi"),
-    customer_name: str = Query("菲利斯"),
+    customer_name: str = Query("客户A"),
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_admin_or_planner),
 ):
@@ -158,7 +159,7 @@ def api_import_default_excel(
             db,
             path,
             customer_id="feilisi",
-            customer_name="菲利斯",
+            customer_name="客户A",
             created_by=principal.username,
         )
         db.commit()
@@ -173,7 +174,7 @@ def api_import_feilisi_print_register(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_admin_or_planner),
 ):
-    """从共享盘 I-表格类/打印条码登记表 导入「菲利斯」贴码/打印流水绑定。"""
+    """从共享盘 I-表格类/打印条码登记表 导入贴码表贴码/打印流水绑定。"""
     try:
         result = import_feilisi_print_barcode_register(db, created_by=principal.username)
         total_ict = 0
@@ -209,10 +210,10 @@ def api_import_enjiu_print_register(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_admin_or_planner),
 ):
-    """从共享盘 I-表格类/打印条码登记表 导入「恩玖-鼎雄」贴码流水绑定。"""
+    """从共享盘 I-表格类/打印条码登记表 导入「客户B」贴码流水绑定。"""
     try:
         result = import_enjiu_print_barcode_register(db, created_by=principal.username)
-        # 导入后立刻把库内未归属的 ICT 恩玖条码挂上订单
+        # 导入后立刻把库内未归属的 ICT 客户B条码挂上订单
         total_linked = 0
         offset = 0
         for _ in range(80):
@@ -272,7 +273,7 @@ def api_ict_sync(
 ):
     try:
         result = sync_ict_from_shares(db, force_all=force_all)
-        # 恩玖 ATS（192.168.2.156 Var_Type）一并拉取，写入同一 ICT 结果表
+        # 客户B ATS（192.168.2.156 Var_Type）一并拉取，写入同一 ICT 结果表
         try:
             ats = sync_enjiu_ats_from_shares(db, force_all=force_all)
             result["enjiu_ats"] = ats
@@ -293,7 +294,7 @@ def api_enjiu_ats_sync(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_admin_or_planner),
 ):
-    """单独抓取恩玖 ATS：\\\\IP\\ENJOY\\ATS\\log\\Var_Type。"""
+    """单独抓取客户B ATS：\\\\IP\\ENJOY\\ATS\\log\\Var_Type。"""
     try:
         result = sync_enjiu_ats_from_shares(db, force_all=force_all)
         rematch = rematch_ict_to_laser(db)
@@ -336,13 +337,36 @@ def api_order_ict_boards(
     )
 
 
+@router.get("/orders/{purchase_no}/pre-oven-aoi-boards")
+def api_order_pre_oven_aoi_boards(
+    purchase_no: str,
+    customer_id: str = "",
+    model_code: str = "",
+    keyword: str = "",
+    result: str = "",
+    include_items: bool = Query(True),
+    limit: int = Query(5000, ge=1, le=20000),
+    db: Session = Depends(get_db),
+):
+    return boards_for_pre_oven_purchase(
+        db,
+        purchase_no,
+        customer_id=customer_id,
+        model_code=model_code,
+        keyword=keyword,
+        result=result,
+        include_items=include_items,
+        limit=limit,
+    )
+
+
 @router.post("/tts/sync")
 def api_tts_laser_sync(
     rematch: bool = True,
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(require_admin_or_planner),
 ):
-    """从菲利斯 TTS 拉取镭雕/补码流水段，写入镭雕登记并重挂 AOI。"""
+    """从客户A TTS 拉取镭雕/补码流水段，写入镭雕登记并重挂 AOI。"""
     try:
         result = sync_laser_from_tts(
             db,

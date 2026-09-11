@@ -1,4 +1,4 @@
-"""导出鼎雄风格加工报价单 Excel"""
+"""导出景立创风格加工报价单 Excel"""
 from __future__ import annotations
 
 import io
@@ -37,7 +37,7 @@ def export_quote_xlsx(db: Session, quote: QuoteOrder) -> bytes:
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "鼎雄报价模版"
+    ws.title = "加工报价模版"
 
     thin = _thin()
     title_font = Font(name="微软雅黑", size=16, bold=True)
@@ -45,7 +45,7 @@ def export_quote_xlsx(db: Session, quote: QuoteOrder) -> bytes:
     normal = Font(name="微软雅黑", size=10)
 
     ws.merge_cells("A1:H1")
-    ws["A1"] = "深圳鼎雄电子科技有限公司"
+    ws["A1"] = "深圳市景立科技有限公司"
     ws["A1"].font = title_font
     ws["A1"].alignment = Alignment(horizontal="center")
 
@@ -117,7 +117,7 @@ def export_quote_xlsx(db: Session, quote: QuoteOrder) -> bytes:
     ws.cell(24, 2, quote.quote_no)
     ws.cell(25, 1, "其它说明")
     ws.cell(26, 1, "1，批次加工费用=产品加工单价×批量数+专用治具费用+试产/工程费；")
-    ws.cell(27, 1, "2，本单按鼎雄报价习惯算法自动核算（CHIP一类0603/1206；二类1.5点；IC取P列；DIP取Q列）。")
+    ws.cell(27, 1, "2，本单按报价习惯算法自动核算（CHIP一类0603/1206；二类1.5点；IC取P列；DIP取Q列）。")
     ws.cell(28, 1, f"源文件：{quote.source_filename or '-'}；制单：{quote.created_by or '-'}")
 
     ws.column_dimensions["A"].width = 18

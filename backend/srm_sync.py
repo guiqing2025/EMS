@@ -466,7 +466,7 @@ def _archive_disappeared_orders(db: Session, customer_id: str, synced_keys: set)
 
 
 def _delete_disappeared_orders(db: Session, customer_id: str, synced_keys: set) -> int:
-    """不在最新同步列表中的非手工订单：先缓存单价，再删除（菲利斯 ASN 委外口径）。"""
+    """不在最新同步列表中的非手工订单：先缓存单价，再删除（客户A ASN 委外口径）。"""
     if not synced_keys:
         return 0
     rows = (
@@ -924,7 +924,7 @@ async def sync_srm_orders(db: Session) -> SyncLog:
                 ev = await sync_receive_events(db)
                 msg = (
                     f"收货事件 {ev['date_from']}~{ev['date_to']} "
-                    f"菲利斯 {ev['feilisi']} / 恩玖 {ev['enjiu']}"
+                    f"客户A {ev['feilisi']} / 客户B {ev['enjiu']}"
                 )
                 if ev.get("errors"):
                     msg += f"（部分失败: {'；'.join(ev['errors'])}）"
@@ -934,7 +934,7 @@ async def sync_srm_orders(db: Session) -> SyncLog:
                 detail = str(ev_exc).strip() or type(ev_exc).__name__
                 messages.append(f"收货事件失败 - {detail}")
         log.message = (
-            f"同步完成（菲利斯按 ASN 委外在制列表全量对齐；其他客户仍跟进本地归档）："
+            f"同步完成（客户A按 ASN 委外在制列表全量对齐；其他客户仍跟进本地归档）："
             + "；".join(messages)
             + f"；对账记录 {recon_count} 条"
         )

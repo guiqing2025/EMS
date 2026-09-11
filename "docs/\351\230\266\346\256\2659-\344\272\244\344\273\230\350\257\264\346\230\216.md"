@@ -1,0 +1,44 @@
+# 阶段 9 交付说明 — 财务应收应付与出纳
+
+## 里程碑 M9
+
+从发货到应收收款、从入库到应付付款、出纳账户流水可对上。
+
+## 已上线
+
+| 事项 | 能力 |
+|------|------|
+| 9.1 应付统计 | 采购入库 / 委外入库 / 其他费用；按供应商汇总未付 |
+| 9.2 付款申请→审批→付款 | 勾选 AP → 提交 → 审批 → 付款过账扣账户并核销 |
+| 9.3 应收统计 | 发货确认 / 其他收入；按客户汇总未收 |
+| 9.4 收款单 | 勾选 AR → 过账入账户并核销 |
+| 9.5 出纳 | 默认现金/基本户；手工录入、报销、账户调拨；收付款自动流水 |
+| 9.6 票据 | 简版登记 |
+| 9.7 发票登记 | 简版登记，可填关联收付款单号 |
+
+## API
+
+前缀：`/api/finance`
+
+- `/ap`、`/ar`、`/ap/other-expense`、`/ar/other-income`
+- `/payment-requests`、`…/approve`、`/payments/from-request/{id}`、`/payments/{id}/post`
+- `/receipts`、`/receipts/{id}/post`
+- `/accounts`、`/ledgers`、`/cashier/manual|reimbursement|transfer`
+- `/invoices`、`/bills`
+
+## 前端
+
+`/finance/ap`、`/finance/ar`、`/finance/cashier`（总账仍为阶段10占位）
+
+## 自测
+
+```bash
+cd backend
+EMS_DB=ems.dev.db EMS_USE_SQLITE=1 .venv/bin/python scripts/sim_phase09_finance.py
+```
+
+最近一次（2026-09-09）：**通过 10 / 失败 0**。
+
+## 刻意后置
+
+总账凭证（阶段10）、部分金额核销 UI、多级审批工作流、销退应收冲红。

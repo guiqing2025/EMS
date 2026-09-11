@@ -117,7 +117,7 @@
     const p = document.querySelector('#eng-customer-picker .page-subtitle');
     if (activeEngTab === 'substitution') {
       if (h1) h1.textContent = '替代料';
-      if (p) p.textContent = '请选择客户后查看或导入《鼎雄 TDA 变更记录》';
+      if (p) p.textContent = '请选择客户后查看或导入《TDA 变更记录》';
     } else if (activeEngTab === 'process') {
       if (h1) h1.textContent = '工序对照';
       if (p) p.textContent = '请选择客户后维护机型工序对照';
@@ -141,7 +141,7 @@
       if (sub) {
         sub.textContent = subCid === 'yonglian'
           ? '按客户查询与维护委外投产替代表'
-          : '按《鼎雄 TDA 变更记录》一览表：登记·工单·产品·原/变更物料（点「详情」可看完整字段）';
+          : '按《TDA 变更记录》一览表：登记·工单·产品·原/变更物料（点「详情」可看完整字段）';
       }
     } else if (activeEngTab === 'process') {
       const filterCode = (document.getElementById('eng-proc-filter-code')?.value || '').trim().toUpperCase();
@@ -227,7 +227,7 @@
     const box = document.getElementById('eng-customer-cards');
     if (!box) return;
     if (!engCustomers.length) {
-      box.innerHTML = '<p class="empty">未配置工程客户，请在 srm_config.json 的 engineering_customers 中登记</p>';
+      box.innerHTML = '<p class="empty">暂无工程客户。ERP 模式下按需在配置中登记，不预置旧客户资料。</p>';
       return;
     }
     const counts = todoCounts || {};
@@ -673,7 +673,7 @@
     if (el) {
       el.textContent = meta.row_count
         ? `${meta.customer_name || cid} · TDA变更 ${meta.row_count} 条 · 更新 ${fmtTime(meta.synced_at)}`
-        : `${meta.customer_name || cid} · 暂无记录（请下载「鼎雄TDA变更记录」模板后导入）`;
+        : `${meta.customer_name || cid} · 暂无记录（请下载「景立创TDA变更记录」模板后导入）`;
     }
     document.body.classList.toggle('eng-sub-yonglian', cid === 'yonglian');
     document.body.classList.toggle('eng-sub-tda', cid !== 'yonglian');
@@ -831,7 +831,7 @@
       return;
     }
     const keyword = document.getElementById('eng-sub-search')?.value?.trim() || '';
-    // 永联：拉全量后按子项/投产透视成 D1/U1…列（对齐客户 Excel）
+    // 客户C：拉全量后按子项/投产透视成 D1/U1…列（对齐客户 Excel）
     if (cid === 'yonglian') {
       const params = new URLSearchParams({ page: '1', page_size: '500', customer_id: cid });
       if (keyword) params.set('keyword', keyword);
@@ -1128,7 +1128,7 @@
     const a = document.createElement('a');
     const qs = cid ? `?customer_id=${encodeURIComponent(cid)}` : '';
     a.href = API + '/substitutions/template.xlsx' + qs;
-    a.download = cid === 'yonglian' ? 'yonglian_substitution_template.xlsx' : '鼎雄TDA变更记录模板.xlsx';
+    a.download = cid === 'yonglian' ? 'yonglian_substitution_template.xlsx' : 'TDA变更记录模板.xlsx';
     // 带鉴权：用 fetch blob
     fetch(a.href, { headers: window.EMS.authHeaders() })
       .then(async (res) => {
@@ -3089,7 +3089,7 @@
         if (!alts.length) return;
         subByComp[key] = { alt_code: alts[0], sub_code: alts[0], alt_name: '', alt_spec: '', _score: 10 };
       });
-      // 可选：用已确认规则补规格（永联另可补分板用量 qty）
+      // 可选：用已确认规则补规格（客户C另可补分板用量 qty）
       const cid = String(selectedModel.customer_id || '').trim();
       const isYonglian = cid === 'yonglian' || String(selectedModel.internal_code || '').trim() === 'A067';
       const modelCode = String(selectedModel.model_code || '').trim();
@@ -3126,7 +3126,7 @@
               if (!p.bom || !p.alt) return;
               const hit = subByComp[p.bom];
               if (!hit) return;
-              // 菲力斯等客户规则 qty=整单总需求，不能当单台用量；仅永联用 qty 覆盖 BOM
+              // 客户A等客户规则 qty=整单总需求，不能当单台用量；仅客户C用 qty 覆盖 BOM
               if (isYonglian && r.qty != null && r.qty !== '' && hit.qty == null) hit.qty = r.qty;
               if (!hit.alt_spec && p.spec) hit.alt_spec = p.spec;
               if (!hit.alt_name && p.name) hit.alt_name = p.name;
@@ -3497,7 +3497,7 @@
       await loadReviewInbox({ silent: true });
     }
 
-    // 亿兰科：1 份（纯 DIP/纯 SMT）或 2 份（SMT+DIP，不分先后）
+    // 客户D：1 份（纯 DIP/纯 SMT）或 2 份（SMT+DIP，不分先后）
     if (lockedIc === 'A120') {
       if (!pairInput) {
         window.EMS.showToast('页面缺少文件选择框，请强制刷新（Ctrl+F5）后再试', 'error');
@@ -4519,7 +4519,7 @@
       </tr>`).join('');
     el.innerHTML = `
       <div style="line-height:1.7;margin-bottom:12px">
-        <div><strong>发料用量风险</strong>：${s.substitution_qty_issue_count ?? 0} 行 / ${s.substitution_affected_orders ?? 0} 订单（菲力斯等，规则 qty=整单总数）</div>
+        <div><strong>发料用量风险</strong>：${s.substitution_qty_issue_count ?? 0} 行 / ${s.substitution_affected_orders ?? 0} 订单（客户A等，规则 qty=整单总数）</div>
         <div><strong>BOM 漏料对比</strong>：${s.bom_total ?? 0} 套，一致 ${s.bom_ok ?? 0}，漏料 <span style="color:${leaks.length ? '#c00' : 'inherit'}">${s.bom_leak ?? 0}</span>，无快照 ${s.bom_no_snapshot ?? 0}</div>
         <div><strong>历史误打留痕</strong>：${s.wrong_print_log_rows ?? 0} 条；建议重打 ${s.reprint_order_count ?? 0} 单</div>
         <div class="muted" style="font-size:12px;margin-top:4px">生成：${escapeHtml((payload.generated_at || '').replace('T', ' ').slice(0, 19))} UTC</div>

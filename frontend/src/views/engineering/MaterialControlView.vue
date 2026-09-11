@@ -264,7 +264,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="ecnOpen" title="永联 ECN 导入预览" width="860px" destroy-on-close>
+    <el-dialog v-model="ecnOpen" title="ECN 导入预览" width="860px" destroy-on-close>
       <template v-if="ecnPreview">
         <el-alert
           v-if="ecnPreview.warnings?.length"
@@ -464,7 +464,7 @@ function detailGroups(row: MaterialControl) {
   ]
 }
 
-/** 永联 ECR 整单变更时常不填行级本批管制（全 0）；有分批数量时才显示该列 */
+/** ECR 整单变更时常不填行级本批管制（全 0）；有分批数量时才显示该列 */
 function groupHasBatchQty(g: { changes?: Array<{ control_qty?: number | null }> }) {
   return (g.changes || []).some((c) => Number(c.control_qty || 0) > 0)
 }

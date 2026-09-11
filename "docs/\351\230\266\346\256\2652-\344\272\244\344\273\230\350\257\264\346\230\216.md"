@@ -1,0 +1,47 @@
+# 阶段 2 交付说明 — 销售订单与备货
+
+## 里程碑 M2
+
+业务可独立完成「接销售单 / 打样单 / 备货单」，不依赖 SRM；旧客户 PO 仅作只读或导入工具。
+
+## 已上线
+
+| 事项 | 能力 |
+|------|------|
+| 2.1 销售订单 | 手工建单、行（料号/数量/交期/单价）、状态机草稿→确认→计划中→执行中→部分出货→完成/关闭/作废 |
+| 2.2 打样订单 | 状态推进；打样属性；转量产销售单（`order_kind=sample_convert`） |
+| 2.3 备货单 | 内部/客户备货；确认→计划中（供阶段3 MRP 输入） |
+| 2.4 BOM 绑定 | 销售行 / 打样单绑 `bom_model_id`；`require_bom=是` 时未绑不可进「计划中」 |
+| 2.5 旧 PO 并存 | 菜单保留「历史·客户订单」；`POST /api/sales/sales-orders/from-srm` 导入为草稿 |
+
+## API
+
+前缀：`/api/sales`
+
+- `GET/POST /sales-orders`，`GET/PUT /sales-orders/{id}`，`POST …/status`，`POST …/lines/{lid}/bind-bom`，`POST …/from-srm`
+- `GET/PUT /sample-orders/{id}`，`POST …/status`，`POST …/bind-bom`，`POST …/to-sales-order`
+- `GET/POST /stock-orders`，`GET/PUT /stock-orders/{id}`，`POST …/status`
+
+报价转单仍走 `/api/presales/quotes/{id}/to-sales-order`（阶段1）。
+
+## 前端
+
+- `/sales/orders` → `SalesOrderView.vue`
+- `/sales/sample-orders` → `SampleOrderView.vue`
+- `/sales/stock-orders` → `StockOrderView.vue`（已取消「待建」）
+
+## 自测
+
+```bash
+cd backend
+EMS_DB=ems.dev.db EMS_USE_SQLITE=1 .venv/bin/python scripts/sim_phase02_sales.py
+```
+
+最近一次（2026-09-09）：**通过 12 / 失败 0**（生命周期 + BOM 负向闸门 + 打样转量产 + 备货 + PO 导入去重 + HTTP）。
+
+## 建议界面路径
+
+1. **销售 → 销售订单** 新建 → 确认 →（可选开强制 BOM）绑 BOM ID → 计划中 → 执行中  
+2. **打样订单** 推进到完成 → **转量产**  
+3. **备货单** 新建内部备货 → 确认 → 计划中  
+4. 销售订单页 **导入客户PO**（有历史 `line_key` / `purchase_no` 时）

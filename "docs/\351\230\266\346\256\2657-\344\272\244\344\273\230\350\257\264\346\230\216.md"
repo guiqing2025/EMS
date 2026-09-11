@@ -1,0 +1,47 @@
+# 阶段 7 交付说明 — 销售出货
+
+## 里程碑 M7
+
+销售订单 → 销售出库（扣 GOOD）→ 打包条码 → 发货单确认 → 回写已出货数量 / 订单关闭；挂应收 stub。
+
+## 已上线
+
+| 事项 | 能力 |
+|------|------|
+| 7.1 销售出库单 | 从 SO 下推 / 手工；过账扣成品；库存不足拒绝 |
+| 7.2 打包条码 | 挂出库单的条码/箱号；复杂合箱仍可用过渡「成品发货/打包批次」 |
+| 7.3 发货单 | 从已过账出库生成；确认；打印预览载荷 |
+| 7.4 回写 SO | `shipped_qty`；`partial_shipped` / `done` |
+| 7.5 应收 stub | `ArReceivableStub(source_type=delivery_note)` |
+| A24 入库直接出库 | `FgReceipt.direct_outbound` 过账后自动生成出库草稿（有关联 SO 时） |
+
+## 硬规则
+
+- 销售出库仅从 `GOOD` 扣减；可用量不足拒绝过账
+- 出库数量不可使行 `shipped_qty` 超订单量
+- 仅 `posted` 出库单可生成发货单；确认后出库单 → `delivered`
+
+## API
+
+前缀：`/api/shipping`
+
+- `/issues`、`/issues/from-so/{id}`、`/issues/from-fg/{id}`、`/issues/{id}/post|void`
+- `/pack-barcodes`、`/issues/{id}/pack-barcodes`
+- `/deliveries/from-issue/{id}`、`/deliveries/{id}/confirm`、`/deliveries/{id}/print`
+
+## 前端
+
+`/shipping/sales-issue`、`/shipping/delivery`（菜单「出货」已接通）
+
+## 自测
+
+```bash
+cd backend
+EMS_DB=ems.dev.db EMS_USE_SQLITE=1 .venv/bin/python scripts/sim_phase07_shipping.py
+```
+
+最近一次（2026-09-09）：**通过 9 / 失败 0**。
+
+## 刻意后置
+
+打包合箱与旧 SRM `line_key` 深度打通、正式打印模板 PDF、阶段9正式应收开账。
